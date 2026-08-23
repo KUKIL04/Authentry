@@ -58,7 +58,7 @@ export default function TenantOnboarding() {
 
     setIsUploading(true);
     try {
-      const res = await TenantAPI.uploadOnboardingLogo(file);
+      const res = await TenantAPI.uploadOnboardingLogo(file, formData.logoUrl);
       if (res.logoUrl) {
         setFormData(prev => ({ ...prev, logoUrl: res.logoUrl }));
       }
@@ -67,11 +67,16 @@ export default function TenantOnboarding() {
     } finally {
       setIsUploading(false);
     }
-  }, []);
+  }, [formData.logoUrl]);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
-    accept: { 'image/*': ['.png', '.jpg', '.jpeg', '.webp', '.svg'] },
+    accept: {
+      'image/jpeg': ['.jpeg', '.jpg'],
+      'image/png': ['.png'],
+      'image/webp': ['.webp'],
+      'image/svg+xml': ['.svg']
+    },
     maxFiles: 1,
     maxSize: 5 * 1024 * 1024 // 5MB
   });

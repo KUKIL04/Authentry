@@ -24,7 +24,7 @@ const storage = new CloudinaryStorage({
     return {
       folder: 'idp_logos', // Creates a specific folder in your Cloudinary media library
       public_id: `logo-${tenantId}-${uniqueSuffix}`, // File extension is handled automatically
-      allowed_formats: ['jpeg', 'jpg', 'png', 'webp', 'svg'],
+      resource_type: 'auto',
     };
   },
 });

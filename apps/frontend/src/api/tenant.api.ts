@@ -6,10 +6,14 @@ export const TenantAPI = {
     return response.data;
   },
 
-  uploadOnboardingLogo: async (file: File) => {
+  uploadOnboardingLogo: async (file: File, oldLogoUrl?: string) => {
     const formData = new FormData();
     formData.append('logo', file);
 
+    if (oldLogoUrl) {
+      formData.append('oldLogoUrl', oldLogoUrl);
+    }
+    
     const response = await apiClient.post('/tenant/logo', formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
