@@ -28,6 +28,15 @@ export class EmailService {
   }
 
   private static async initializeEtherealTransporter() {
+    if (process.env.NODE_ENV === 'production') {
+      console.log('⚠️ Cloud Sandbox Enabled: Using Mock JSON Transporter to bypass firewall blocks.');
+      this.transporter = nodemailer.createTransport({
+        jsonTransport: true
+      });
+      return this.transporter;
+    }
+
+    // This remains for local development on our machine
     const testAccount = await nodemailer.createTestAccount();
     this.transporter = nodemailer.createTransport({
       host: "smtp.ethereal.email",
@@ -62,8 +71,11 @@ export class EmailService {
       });
 
       console.log("\n-----------------------------------------");
-      console.log(`📩 OTP sent to ${to}`);
-      console.log("🔗 Preview URL: %s", nodemailer.getTestMessageUrl(info));
+      console.log(`📩 [MOCK EMAIL] OTP sent to ${to}`);
+      console.log(`🔑 SECURITY CODE: ${otp}`); // Prints the OTP for Render testing!
+      
+      const testUrl = nodemailer.getTestMessageUrl(info);
+      if (testUrl) console.log("🔗 Preview URL: %s", testUrl);
       console.log("-----------------------------------------\n");
     } catch (error) {
       console.error("Failed to send OTP email:", error);
