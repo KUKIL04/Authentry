@@ -21,16 +21,23 @@ export class SuperAdminController {
       const clientId = CryptoService.generateClientId();
       const { rawKey: clientSecret, keyHash: clientSecretHash } = CryptoService.generateApiKey();
 
-      const app = await QueryService.createApp(name, description, productionUrl, clientId, clientSecretHash);
+      try {
+        const app = await QueryService.createApp(name, description, productionUrl, clientId, clientSecretHash);
 
-      await QueryService.logSuperAdminEvent(req.user?.userId!, 'GLOBAL_APP_REGISTERED', req.ip || '127.0.0.1');
+        await QueryService.logSuperAdminEvent(req.user?.userId!, 'GLOBAL_APP_REGISTERED', req.ip || '127.0.0.1');
 
-      return res.status(201).json({ 
-        success: true, 
-        message: 'Enterprise Suite Registered.',
-        app,
-        clientSecret // Shown ONLY once!
-      });
+        return res.status(201).json({ 
+          success: true, 
+          message: 'Enterprise Suite Registered.',
+          app,
+          clientSecret // Shown ONLY once!
+        });
+      } catch (e: any) {
+        if (e.code === '23505' && e.constraint === 'apps_name_key') {
+          return res.status(409).json({ error: `A Software Suite named "${name}" already exists.` });
+        }
+        throw e; // Rethrow unexpected database errors
+      }
     } catch (err) { next(err); }
   }
 
