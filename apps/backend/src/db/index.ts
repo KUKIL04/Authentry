@@ -66,8 +66,6 @@ pool.query = async function <R extends QueryResultRow = any, I extends any[] = a
             console.error('Redis slow query push failed:', err);
           }
         })();
-
-        console.warn(`⚠️ [SLOW DB QUERY] Execution took ${durationMs}ms: "${queryNormalized.substring(0, 80)}..."`);
       }
     }
 
@@ -83,7 +81,7 @@ pool.query = async function <R extends QueryResultRow = any, I extends any[] = a
 export const initializeDatabase = async () => {
   const client = await pool.connect();
   try {
-    const schemaPath = path.join(__dirname, 'schema.sql');
+    const schemaPath = path.join(__dirname, '../../src/db/schema.sql');
     const sql = fs.readFileSync(schemaPath, 'utf8');
     await client.query(sql);
     console.log('✅ Database schema verified.');

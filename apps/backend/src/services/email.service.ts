@@ -7,9 +7,9 @@ export class EmailService {
   private static getTransporter() {
     if (!this.transporter) {
       // Direct environmental switch: In production/staging, we hook up the actual SMTP cluster
-      if (process.env.NODE_ENV === 'production' || process.env.SMTP_HOST) {
+      if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASSWORD) {
         this.transporter = nodemailer.createTransport({
-          host: process.env.SMTP_HOST || 'smtp.resend.com', // or smtp.sendgrid.net, email-smtp.us-east-1.amazonaws.com
+          host: process.env.SMTP_HOST, // or smtp.sendgrid.net, email-smtp.us-east-1.amazonaws.com
           port: parseInt(process.env.SMTP_PORT || '587'),
           secure: process.env.SMTP_SECURE === 'true', // true for 465, false for 587
           auth: {
@@ -20,6 +20,7 @@ export class EmailService {
         console.log(`🚀 Production SMTP Mail Pool initialized via ${process.env.SMTP_HOST}`);
       } else {
         // Fallback to local sandbox fallback if environment variables are missing
+        console.warn('⚠️ SMTP credentials missing. Falling back to Ethereal Sandbox.');
         return this.initializeEtherealTransporter();
       }
     }
