@@ -1,0 +1,37 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: idp-postgres
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: password123
+      POSTGRES_DB: auth_saas_db
+    ports:
+      - "5434:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  redis:
+    image: redis:7.2-alpine
+    container_name: idp-redis
+    ports:
+      - "6380:6379"
+    restart: unless-stopped
+
+  sandbox-postgres:
+    image: postgres:16-alpine
+    container_name: sandbox-postgres
+    environment:
+      POSTGRES_USER: sandbox_admin
+      POSTGRES_PASSWORD: sandbox_password
+      POSTGRES_DB: sandbox_audit_db
+    ports:
+      - "5435:5432"
+    volumes:
+      - sandbox-pgdata:/var/lib/postgresql/data
+    restart: unless-stopped  
+
+volumes:
+  pgdata:
+  sandbox-pgdata:

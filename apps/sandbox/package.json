@@ -1,0 +1,14 @@
+{
+  "name": "sandbox-app",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch src/server.js"
+  },
+  "dependencies": {
+    "@auth-entry/node": "workspace:*",
+    "cookie-parser": "^1.4.6",
+    "express": "^4.19.0",
+    "pg": "^8.22.0"
+  }
+}

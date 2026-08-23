@@ -1,0 +1,23 @@
+{
+  "name": "@auth-entry/node",
+  "version": "1.0.0",
+  "description": "Enterprise Node.js SDK for AuthEntry",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "axios": "^1.18.1",
+    "jsonwebtoken": "^9.0.3",
+    "jwks-rsa": "^4.1.0"
+  },
+  "devDependencies": {
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/node": "^26.1.1",
+    "typescript": "^7.0.2"
+  }
+}
