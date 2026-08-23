@@ -1,15 +1,25 @@
 import pg from 'pg';
+const { Pool } = pg;
 
-// Connects to the isolated sandbox-postgres container running on port 5435
-export const pool = new pg.Pool({
-  user: 'sandbox_admin',
-  host: 'localhost',
-  database: 'sandbox_audit_db',
-  password: 'sandbox_password',
-  port: 5435,
+// Reads from the Render environment variable, falls back to local Docker
+const connectionString = process.env.DATABASE_URL || 'postgres://admin:password123@localhost:5435/sandbox_audit_db';
+
+// Identify if we are running locally or in the cloud
+const isLocal = connectionString.includes('localhost') || connectionString.includes('127.0.0.1');
+
+export const pool = new Pool({
+  connectionString,
+  ssl: isLocal ? false : { rejectUnauthorized: false }, // Required for Supabase
+  max: 5, // Keep the pool small for the free tier
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 5000,
 });
 
-pool.on('error', (err) => {
-  console.error('Unexpected error on idle PostgreSQL client', err);
-  process.exit(-1);
+// Automatically route all queries to the sandbox schema
+pool.on('connect', (client) => {
+  // We apply this in production so it targets your isolated Supabase schema
+  if (!isLocal) {
+    client.query('SET search_path TO sandbox, public')
+      .catch(err => console.error('Failed to set search_path:', err));
+  }
 });
