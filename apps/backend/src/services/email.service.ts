@@ -102,7 +102,13 @@ export class EmailService {
           `
         });
       });  
-      console.log(`\n📩 Invite sent to ${to}\n🔗 Preview: %s\n`, nodemailer.getTestMessageUrl(info));
+      console.log("\n-----------------------------------------");
+      console.log(`📩 [MOCK EMAIL] Invite sent to ${to}`);
+      console.log(`🔗 SECURE INVITE LINK: ${inviteLink}`);
+      
+      const testUrl = nodemailer.getTestMessageUrl(info);
+      if (testUrl) console.log("🔗 Ethereal Preview URL: %s", testUrl);
+      console.log("-----------------------------------------\n");
     } catch (error) {
       console.error("Failed to send invite email:", error);
     }
@@ -131,7 +137,13 @@ export class EmailService {
           `
         });
       });  
-      console.log(`\n📩 Workspace notification sent to ${to}\n🔗 Preview: %s\n`, nodemailer.getTestMessageUrl(info));
+      console.log("\n-----------------------------------------");
+      console.log(`📩 [MOCK EMAIL] Workspace notification sent to ${to}`);
+      console.log(`🔗 LOGIN LINK: ${loginLink}`);
+      
+      const testUrl = nodemailer.getTestMessageUrl(info);
+      if (testUrl) console.log("🔗 Ethereal Preview URL: %s", testUrl);
+      console.log("-----------------------------------------\n");
     } catch (error) {
       console.error("Failed to send workspace added notification email:", error);
     }

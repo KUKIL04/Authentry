@@ -56,35 +56,49 @@ app.get('/health', (req, res) => {
 
 app.use(errorHandler);
 
-const server = app.listen(PORT, async () => {
-  console.log(`🚀 Production-grade Auth Backend listening on port ${PORT}`);
-  await initializeDatabase();
-  await initializeRedis();
+const bootServer = async () => {
+  try {
+    // 1. Connect to infrastructure FIRST
+    await initializeDatabase();
+    await initializeRedis();
 
-  // START BACKGROUND WORKERS
-  startTelemetryWorker();
-  startCleanupWorker();
-  
-  // START WEBHOOK PIPELINE
-  startWebhookWorker(); 
-  startCronWorker();
-});
+    // 2. Open HTTP port ONLY after databases are ready
+    const server = app.listen(PORT, () => {
+      console.log(`🚀 Production-grade Auth Backend listening on port ${PORT}`);
+      
+      // START BACKGROUND WORKERS
+      startTelemetryWorker();
+      startCleanupWorker();
+      
+      // START WEBHOOK PIPELINE
+      startWebhookWorker(); 
+      startCronWorker();
+    });
 
-const gracefulShutdown = (signal: string) => {
-  console.log(`🛑 ${signal} received. Shutting down gracefully...`);
-  server.close(async () => {
-    console.log('✅ HTTP server closed. Releasing active connections...');
-    try {
-      if (redisClient.isOpen) await redisClient.quit();
-      await pool.end();
-      console.log('✅ Resources released. Safe exit complete.');
-      process.exit(0);
-    } catch (err) {
-      console.error('❌ Error during shutdown sequence:', err);
-      process.exit(1);
-    }
-  });
+    // 3. Attach Graceful Shutdown logic
+    const gracefulShutdown = (signal: string) => {
+      console.log(`🛑 ${signal} received. Shutting down gracefully...`);
+      server.close(async () => {
+        console.log('✅ HTTP server closed. Releasing active connections...');
+        try {
+          if (redisClient.isOpen) await redisClient.quit();
+          await pool.end();
+          console.log('✅ Resources released. Safe exit complete.');
+          process.exit(0);
+        } catch (err) {
+          console.error('❌ Error during shutdown sequence:', err);
+          process.exit(1);
+        }
+      });
+    };
+
+    process.on('SIGTERM', () => gracefulShutdown('SIGTERM')); // For Render/Docker
+    process.on('SIGINT', () => gracefulShutdown('SIGINT'));   // For Local Ctrl+C
+
+  } catch (error) {
+    console.error('❌ FATAL: Failed to boot server infrastructure:', error);
+    process.exit(1);
+  }
 };
 
-process.on('SIGTERM', () => gracefulShutdown('SIGTERM')); // For Render/Docker
-process.on('SIGINT', () => gracefulShutdown('SIGINT'));   // For Local Ctrl+C
+bootServer();
