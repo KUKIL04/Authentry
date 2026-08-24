@@ -23,7 +23,13 @@ export const getRolesByTenant = async (tenantId: string) => {
        ) as bundles
      FROM roles r
      LEFT JOIN role_modules rm ON r.id = rm.role_id
-     WHERE r.tenant_id = $1 OR r.is_system_template = TRUE
+     WHERE r.tenant_id = $1 
+        OR (r.is_system_template = TRUE AND EXISTS (
+            SELECT 1 FROM role_modules rm2
+            JOIN modules m ON rm2.module_id = m.id
+            JOIN tenant_app_allocations taa ON m.app_id = taa.app_id
+            WHERE rm2.role_id = r.id AND taa.tenant_id = $1
+        ))
      GROUP BY r.id
      ORDER BY r.is_system_template DESC, r.created_at DESC`,
     [tenantId]

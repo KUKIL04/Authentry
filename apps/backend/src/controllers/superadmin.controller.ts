@@ -89,6 +89,11 @@ export class SuperAdminController {
 
       if (!tenantId || !appId) return res.status(400).json({ error: 'Tenant ID and App ID required.' });
 
+      const modules = await QueryService.getModulesByApp(appId);
+      if (!modules || modules.length === 0) {
+        return res.status(400).json({ error: 'Cannot allocate an app with no modules. Please create at least one sub-feature module first.' });
+      }
+      
       await QueryService.allocateAppToTenant(tenantId, appId, superAdminId);
 
       await QueryService.logSuperAdminEvent(superAdminId, 'TENANT_ALLOCATION_GRANTED', req.ip || '127.0.0.1');

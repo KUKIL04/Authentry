@@ -421,15 +421,21 @@ export default function RolesManager() {
                 {/* CONTENT: PERMISSIONS (READ-ONLY VIEW) */}
                 {detailTab === 'PERMISSIONS' && (() => {
                   const parsedBundles = getParsedBundles(selectedRole);
+
+                  const validBundles = parsedBundles.filter(b => {
+                    const info = getModuleInfo(b.moduleId);
+                    return info.appName !== 'Unknown';
+                  });
+                  
                   return (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {parsedBundles.length === 0 ? (
+                      {validBundles.length === 0 ? (
                         <div className="col-span-full flex flex-col items-center justify-center p-12 text-slate-400">
                           <Fingerprint className="w-12 h-12 mb-4 opacity-20" />
                           <span className="text-sm font-bold tracking-wide">This role has no specific module access defined.</span>
                         </div>
                       ) : (
-                        parsedBundles.map((bundle, idx) => {
+                        validBundles.map((bundle, idx) => {
                           const info = getModuleInfo(bundle.moduleId);
                           return (
                             <div key={idx} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-200/60 shadow-sm">
