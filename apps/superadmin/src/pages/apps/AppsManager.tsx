@@ -40,7 +40,7 @@ export default function AppsManager() {
     '*', 'user.access.granted', 'user.status.updated', 'user.role.granted', 
     'user.role.revoked', 'user.module.granted', 'user.module.revoked', 
     'user.session.revoked', 'user.password_reset.forced',
-    'tenant.app.revoked', 'identity.sync.forced'
+    'tenant.app.revoked', 'tenant.app.allocated', 'identity.sync.forced'
   ];
   
   const [revealedSecret, setRevealedSecret] = useState<{ clientId: string, clientSecret: string } | null>(null);

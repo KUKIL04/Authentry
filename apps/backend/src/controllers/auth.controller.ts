@@ -637,22 +637,41 @@ export class AuthController {
       // Merges the user-provided data with the HR-provided data
       const mergedCustomData = { ...inviteData, ...(customProfileData || {}) };
 
+      let newUser;
       
-      // Creates new user defaulted to 'PENDING' state (Waiting Room)
-      const newUser = await QueryService.createUser({
-        tenantId: invite.tenant_id,
-        email: invite.email,
-        passwordHash,
-        firstName,
-        middleName,
-        lastName,
-        mobileNo,
-        countryCode: countryCode || '91',
-        isTenantAdmin: false,
-        status: 'PENDING',
-        customProfileData: mergedCustomData,
-        employeeId: invite.employee_id
-      });
+      // ==========================================
+      // THE GRACEFUL CONSTRAINT CATCHER
+      // ==========================================
+      try {
+        newUser = await QueryService.createUser({
+          tenantId: invite.tenant_id,
+          email: invite.email,
+          passwordHash,
+          firstName,
+          middleName,
+          lastName,
+          mobileNo,
+          countryCode: countryCode || '91',
+          isTenantAdmin: false,
+          status: isAutoActive ? 'ACTIVE' : 'PENDING',
+          customProfileData: mergedCustomData,
+          employeeId: invite.employee_id
+        });
+      } catch (dbError: any) {
+        // Catch duplicate Employee ID
+        if (dbError.code === '23505' && dbError.constraint === 'workspace_memberships_tenant_id_employee_id_key') {
+          return res.status(400).json({ 
+            error: `Registration halted: The Employee ID (${invite.employee_id}) assigned to your invitation is already in use by another active member of this workspace. Please contact your HR administrator.` 
+          });
+        }
+        // Catch if they somehow registered globally between the invite and the click
+        if (dbError.code === '23505' && dbError.constraint === 'users_email_key') {
+          return res.status(400).json({ 
+            error: 'An account with this email already exists globally. Please return to the login page and authenticate directly.' 
+          });
+        }
+        throw dbError; // Bubble up unexpected errors
+      }
 
       // ATTACH ROLES & DISPATCH EVENTS (The Auto-Active Flow)
       if (isAutoActive) {
@@ -691,7 +710,9 @@ export class AuthController {
       );
 
       return res.status(201).json({
-        message: 'Registration complete! Welcome to the Waiting Room. Please wait for HR approval.',
+        message: isAutoActive 
+          ? 'Registration complete! Your workspace access is now active.' 
+          : 'Registration complete! Welcome to the Waiting Room. Please wait for HR approval.',
         user: newUser,
       });
     } catch (err) {

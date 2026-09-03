@@ -17,8 +17,15 @@ export const pool = new Pool({
   connectionString: process.env.DATABASE_URL || 'postgres://admin:password123@localhost:5434/auth_saas_db',
   ssl: isLocal ? false : { rejectUnauthorized: false },
   max: 10, // Safeguard pool size to prevent exhausting Supabase free limits
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 5000,
+  
+  // Send TCP keep-alive packets to keep the cloud firewall open
+  keepAlive: true,
+  idleTimeoutMillis: 10000,
+  connectionTimeoutMillis: 10000,
+});
+
+pool.on('error', (err) => {
+  console.warn('⚠️ Idle backend database client error (Safe to ignore):', err.message);
 });
 
 // Deep Telemetry Configuration

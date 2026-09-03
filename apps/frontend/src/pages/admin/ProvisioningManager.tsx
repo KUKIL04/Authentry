@@ -167,21 +167,30 @@ export default function ProvisioningManager() {
 
   const executeBulkInvite = async () => {
     setIsProcessingBulk(true);
-    let success = 0, fail = 0;
-    const errors: string[] = [];
 
-    // Process sequentially to not slam the backend and safely capture independent failures
-    for (const row of parsedBulkData) {
-      try {
-        await AdminAPI.inviteUser(row.email, inviteExpireHours, row.employeeId);
-        success++;
-      } catch (err: any) {
-        fail++;
-        errors.push(`${row.email}: ${err.response?.data?.error || 'Dispatch failed'}`);
-      }
+    try {
+      const payload = parsedBulkData.map(row => ({
+        email: row.email,
+        employeeId: row.employeeId
+      }));
+
+      // Fire a SINGLE request, explicitly enforcing the Waiting Room (false)
+      const res = await AdminAPI.bulkImportUsers(payload, false);
+      
+      setBulkResults({ 
+        success: res.successCount, 
+        fail: res.failureCount, 
+        errors: res.errors 
+      });
+
+    } catch (err: any) {
+      setBulkResults({ 
+        success: 0, 
+        fail: parsedBulkData.length, 
+        errors: [err.response?.data?.error || 'Fatal error during bulk network dispatch.'] 
+      });
     }
 
-    setBulkResults({ success, fail, errors });
     setBulkStep(3);
     fetchData();
     setIsProcessingBulk(false);
@@ -221,7 +230,6 @@ export default function ProvisioningManager() {
                 <div className="p-2 bg-lightgray rounded-lg mr-3 shadow-inner"><LinkIcon className="w-5 h-5 text-gamboge-600 shrink-0" /></div>
                 Generate Invitation
               </h2>
-              {/* 🚨 NEW: Bulk Upload Trigger */}
               <button 
                 onClick={() => setIsBulkModalOpen(true)}
                 className="text-xs font-bold text-gamboge-600 hover:text-gamboge-700 bg-gamboge-50 hover:bg-gamboge-100 border border-gamboge-200 px-3 py-1.5 rounded-lg transition-colors flex items-center shadow-sm"
@@ -296,11 +304,10 @@ export default function ProvisioningManager() {
                  <Loader2 className="w-5 h-5 animate-spin mr-3 shrink-0" /> Loading Links...
                </div>
             ) : (
-              // 🚨 FIX: Scrollable wrapper with max-height!
               <div className="inner-depth p-2 sm:p-3 rounded-2xl sm:rounded-3xl flex-1 flex flex-col overflow-hidden border border-slate-200/50">
                 <div className="max-h-[350px] overflow-y-auto overflow-x-auto neumorphic-scrollbar rounded-xl">
                   <table className="w-full text-left border-collapse min-w-[500px]">
-                    <thead className="bg-slate-50/90 backdrop-blur-sm sticky top-0 z-10 shadow-[0_1px_0_#cbd5e1]">
+                    <thead className="bg-slate-200/90 backdrop-blur-sm sticky top-0 z-10 shadow-[0_1px_0_#cbd5e1]">
                       <tr className="text-slate-500 text-[9px] sm:text-[10px] uppercase tracking-widest whitespace-nowrap">
                         <th className="py-3 px-3 sm:px-4 font-bold">Email Target</th>
                         <th className="py-3 px-3 sm:px-4 font-bold">Expires At</th>
@@ -349,11 +356,10 @@ export default function ProvisioningManager() {
               <Loader2 className="w-5 h-5 sm:w-6 sm:h-6 animate-spin mr-3 shrink-0" /> Loading Queue...
             </div>
           ) : (
-            // 🚨 FIX: Scrollable wrapper with max-height!
             <div className="inner-depth p-2 sm:p-3 rounded-2xl sm:rounded-3xl flex-1 flex flex-col overflow-hidden border border-slate-200/50 min-h-[300px]">
               <div className="max-h-[500px] overflow-y-auto overflow-x-auto neumorphic-scrollbar rounded-xl">
                 <table className="w-full text-left border-collapse min-w-[700px]">
-                  <thead className="bg-slate-50/90 backdrop-blur-sm sticky top-0 z-10 shadow-[0_1px_0_#cbd5e1]">
+                  <thead className="bg-slate-200/90 backdrop-blur-sm sticky top-0 z-10 shadow-[0_1px_0_#cbd5e1]">
                     <tr className="text-slate-500 text-[10px] sm:text-xs uppercase tracking-widest whitespace-nowrap">
                       <th className="py-4 px-4 sm:px-6 font-bold w-1/3">User</th>
                       <th className="py-4 px-4 sm:px-6 font-bold w-1/3">Assign Roles</th>

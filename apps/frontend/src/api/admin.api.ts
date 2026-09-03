@@ -183,8 +183,11 @@ export const AdminAPI = {
     return response.data;
   },
 
-  bulkImportUsers: async (users: { email: string; firstName?: string; lastName?: string; customProfileData?: any; employeeId?: string; roleIds?: string[] }[]) => {
-    const response = await apiClient.post('/admin/users/bulk-import', { users });
+  bulkImportUsers: async (
+    users: { email: string; firstName?: string; lastName?: string; customProfileData?: any; employeeId?: string; roleIds?: string[] }[],
+    bypassWaitingRoom: boolean = true
+  ) => {
+    const response = await apiClient.post('/admin/users/bulk-import', { users, bypassWaitingRoom });
     return response.data;
   },
 

@@ -98,6 +98,7 @@ export class QueryService {
   static cloneSystemRolesToTenant = RbacQueries.cloneSystemRolesToTenant;
   static bundleRoleModule = RbacQueries.bundleRoleModule;
   static assignUserRole = RbacQueries.assignUserRole;
+  static assignBulkUserRoles = RbacQueries.assignBulkUserRoles;
   static revokeUserRole = RbacQueries.revokeUserRole;
   static getRoleUsers = RbacQueries.getRoleUsers;
   static getUserAccessContext = RbacQueries.getUserAccessContext;

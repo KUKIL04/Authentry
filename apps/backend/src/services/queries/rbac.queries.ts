@@ -169,6 +169,20 @@ export const revokeUserRole = async (userId: string, tenantId: string, roleId: s
   await pool.query(query, [userId, tenantId, roleId]);
 };
 
+export const assignBulkUserRoles = async (userIds: string[], tenantId: string, roleIds: string[], assignedBy: string) => {
+  if (!userIds.length || !roleIds.length) return;
+
+  const query = `
+    INSERT INTO user_roles (user_id, tenant_id, role_id, assigned_by)
+    SELECT u.id, $3, r.id, $4
+    FROM unnest($1::uuid[]) AS u(id)
+    CROSS JOIN unnest($2::uuid[]) AS r(id)
+    ON CONFLICT (user_id, tenant_id, role_id) DO NOTHING;
+  `;
+  
+  await pool.query(query, [userIds, roleIds, tenantId, assignedBy]);
+};
+
 // ==========================================
 // THE FAT JWT AGGREGATOR
 // ==========================================

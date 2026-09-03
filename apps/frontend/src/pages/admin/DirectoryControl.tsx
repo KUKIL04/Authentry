@@ -89,12 +89,14 @@ export default function DirectoryControl() {
   const fetchData = async () => {
     setIsLoading(true);
     try {
-      const [usersRes, schemaRes] = await Promise.all([
+      const [usersRes, schemaRes, rolesRes] = await Promise.all([
         AdminAPI.getUsers(),
-        AdminAPI.getOnboardingSchema()
+        AdminAPI.getOnboardingSchema(),
+        AdminAPI.getRoles().catch(() => [])
       ]);
       setUsers(Array.isArray(usersRes) ? usersRes : []);
       setSchema(schemaRes.schema || []);
+      setRoles(Array.isArray(rolesRes) ? rolesRes : []);
     } catch (err) {
       notify('error', 'Failed to fetch directory data.');
     } finally {

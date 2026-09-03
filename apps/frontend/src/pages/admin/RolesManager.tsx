@@ -105,7 +105,16 @@ export default function RolesManager() {
       parsed.forEach((b: any) => { 
         const mId = b.moduleId || b.moduleid || b.module_id;
         const aLvl = b.accessLevel || b.accesslevel || b.access_level;
-        if (mId && aLvl) safeBundles.push({ moduleId: mId, accessLevel: aLvl }); 
+        
+        if (mId && aLvl) {
+          safeBundles.push({ 
+            moduleId: mId, 
+            accessLevel: aLvl,
+            appName: b.appName || b.appname || b.app_name,
+            moduleName: b.moduleName || b.modulename || b.module_name,
+            appId: b.appId || b.appid || b.app_id
+          }); 
+        }
       });
     }
     return safeBundles;
@@ -431,8 +440,8 @@ export default function RolesManager() {
                         </div>
                       ) : (
                         parsedBundles.map((bundle, idx) => {
-                          const appName = bundle.appName || getModuleInfo(bundle.moduleId).appName;
-                          const moduleName = bundle.moduleName || getModuleInfo(bundle.moduleId).moduleName;
+                          const appName = bundle.appName || getModuleInfo(bundle.moduleId).appName|| 'Restricted Suite';
+                          const moduleName = bundle.moduleName || getModuleInfo(bundle.moduleId).moduleName|| 'Restricted Module';
                           
                           // Check if the tenant actually has this app assigned
                           // 'apps' is the array of apps licensed to THIS specific tenant

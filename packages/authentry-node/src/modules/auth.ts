@@ -41,6 +41,11 @@ export class AuthModule {
     console.warn(`🛑 [SDK] Workspace ${tenantId} blocked locally. License revoked.`);
   }
 
+  unblockTenantLocally(tenantId: string) {
+    this.tenantBlacklist.delete(tenantId);
+    console.log(`🔓 [SDK] Workspace ${tenantId} unblocked locally. License restored.`);
+  }
+  
   // --- SOFT STALE SESSION METHODS ---
   markSessionStale(userId: string, ttlMs: number = 900000) {
     this.staleSessions.set(userId, Date.now() + ttlMs);

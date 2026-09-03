@@ -96,6 +96,11 @@ export class SuperAdminController {
       
       await QueryService.allocateAppToTenant(tenantId, appId, superAdminId);
 
+      await EventDispatcherService.dispatch(tenantId, 'tenant.app.allocated', {
+        appId,
+        reason: 'superadmin_license_granted'
+      }, 1);
+      
       await QueryService.logSuperAdminEvent(superAdminId, 'TENANT_ALLOCATION_GRANTED', req.ip || '127.0.0.1');
 
       return res.json({ success: true, message: 'Software suite successfully licensed to Tenant.' });

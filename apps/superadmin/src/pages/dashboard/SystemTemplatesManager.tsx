@@ -103,7 +103,7 @@ export default function SystemTemplatesManager() {
           <h1 className="text-3xl font-extrabold tracking-tight">Role Blueprints</h1>
           <p className="text-slate-400 mt-2 text-sm font-medium">Define cross-suite job designations that automatically provision to new tenants.</p>
         </div>
-        <button onClick={openCreate} className="flex items-center px-6 py-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold text-xs uppercase tracking-widest transition-all shadow-[0_0_20px_rgba(16,185,129,0.3)]">
+        <button onClick={openCreate} className="flex items-center px-6 py-3 bg-emerald-500 hover:bg-emerald-400 text-white rounded-xl font-bold text-xs uppercase tracking-widest transition-all shadow-[0_0_20px_rgba(16,185,129,0.3)]">
           <Plus className="w-4 h-4 mr-2" /> Compile Blueprint
         </button>
       </div>
@@ -128,8 +128,8 @@ export default function SystemTemplatesManager() {
                   <p className="text-xs text-slate-400 mt-1">{tmpl.description || 'No description'}</p>
                 </div>
                 <div className="flex space-x-2 shrink-0">
-                  <button onClick={() => openEdit(tmpl)} className="p-2 text-slate-400 hover:text-white bg-slate-950 border border-slate-800 rounded-xl"><Edit3 className="w-4 h-4" /></button>
-                  <button onClick={() => handleDelete(tmpl.id)} className="p-2 text-red-400 hover:text-red-300 bg-red-950/40 border border-red-900/50 rounded-xl"><Trash2 className="w-4 h-4" /></button>
+                  <button onClick={() => openEdit(tmpl)} className="p-2 text-slate-400 hover:bg-slate-200 bg-slate-950 border border-slate-800 rounded-xl"><Edit3 className="w-4 h-4" /></button>
+                  <button onClick={() => handleDelete(tmpl.id)} className="p-2 text-red-400 hover:bg-red-100 bg-red-50/40 border border-red-900/50 rounded-xl"><Trash2 className="w-4 h-4" /></button>
                 </div>
               </div>
               
@@ -142,10 +142,10 @@ export default function SystemTemplatesManager() {
                     (tmpl.bundles || []).map((b: any, i: number) => (
                       <div key={i} className="bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs flex items-center">
                         <div className="mr-3">
-                          <span className="text-[9px] text-emerald-500/70 uppercase block font-bold">{b.appName || 'Unknown App'}</span>
-                          <span className="text-slate-300 font-bold">{b.moduleName || 'Unknown Module'}</span>
+                          <span className="text-[12px] text-emerald-700/70 uppercase block font-bold">{b.appName || 'Unknown App'}</span>
+                          <span className="text-sm text-slate-300 font-bold">{b.moduleName || 'Unknown Module'}</span>
                         </div>
-                        <span className={`text-[9px] px-2 py-0.5 rounded font-extrabold uppercase ${b.accessLevel === 'WRITE' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-400'}`}>
+                        <span className={`text-[10px] px-2 py-0.5 rounded font-extrabold uppercase ${b.accessLevel === 'WRITE' ? 'bg-emerald-400/20 text-emerald-700' : 'bg-slate-800 text-slate-400'}`}>
                           {b.accessLevel}
                         </span>
                       </div>
@@ -215,8 +215,8 @@ export default function SystemTemplatesManager() {
             </div>
             
             <div className="p-6 border-t border-slate-800 flex justify-end bg-slate-950 space-x-3">
-              <button type="button" onClick={() => setShowModal(false)} className="px-6 py-3 rounded-xl font-bold text-xs uppercase bg-slate-800 text-white">Cancel</button>
-              <button type="submit" form="blueprintForm" className="px-6 py-3 rounded-xl font-bold text-xs uppercase bg-emerald-600 text-white">Compile</button>
+              <button type="button" onClick={() => setShowModal(false)} className="px-6 py-3 rounded-xl font-bold text-xs uppercase bg-slate-600/10 hover:bg-slate-600/30 text-white">Cancel</button>
+              <button type="submit" form="blueprintForm" className="px-6 py-3 rounded-xl font-bold text-xs uppercase bg-emerald-600 hover:bg-emerald-500 text-white">Compile</button>
             </div>
           </div>
         </div>

@@ -13,10 +13,11 @@ export const pool = new Pool({
   ssl: isLocal ? false : { rejectUnauthorized: false }, 
   
   max: 5, 
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 5000,
+  keepAlive: true,
+  idleTimeoutMillis: 10000,
+  connectionTimeoutMillis: 10000,
 });
 
 pool.on('error', (err) => {
-  console.error('Unexpected error on idle sandbox database client', err);
+  console.warn('⚠️ Idle sandbox database client error (Safe to ignore):', err.message);
 });

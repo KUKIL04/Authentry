@@ -379,5 +379,4 @@ VALUES
   ('unlimitedApi', 'Unlimited API Calls', 'PREMIUM_TIER'),
   ('customTheme', 'White-label Custom Branding', 'PREMIUM_TIER'),
   ('advancedRbac', 'Custom RBAC Engine', 'PREMIUM_TIER')
-ON CONFLICT (feature_key) DO UPDATE 
-SET min_plan_code = EXCLUDED.min_plan_code;
+ON CONFLICT (feature_key) DO NOTHING;

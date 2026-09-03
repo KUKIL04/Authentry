@@ -967,7 +967,8 @@ export class AdminController {
     try {
       const tenantId = req.user?.tenantId;
       const adminId = req.user?.userId;
-      const { users } = req.body; // Array of mapped { email } objects
+      // Extract the new security flag (defaults to true for backwards compatibility)
+      const { users, bypassWaitingRoom = true } = req.body; // Array of mapped { email } objects
 
       if (!tenantId || !adminId) return res.status(400).json({ error: 'Context invalid' });
       if (!Array.isArray(users) || users.length === 0) return res.status(400).json({ error: 'No user data provided for import.' });
@@ -997,10 +998,14 @@ export class AdminController {
             // Check if they are already in this workspace
             const membershipCheck = await QueryService.getWorkspaceMembership(existingUser.id, tenantId);
             if (!membershipCheck) {
-              await QueryService.addWorkspaceMembership(existingUser.id, tenantId, 'ACTIVE', row.customProfileData, row.employeeId);
+
+              // ROUTING FIX: Assign 'PENDING' if we are not bypassing the waiting room
+              const targetStatus = bypassWaitingRoom ? 'ACTIVE' : 'PENDING';
+
+              await QueryService.addWorkspaceMembership(existingUser.id, tenantId, targetStatus, row.customProfileData, row.employeeId);
               
-              for (const roleId of roleIds) {
-                await QueryService.assignUserRole(existingUser.id, tenantId, roleId, adminId);
+              if (bypassWaitingRoom && roleIds.length > 0) {
+                 await QueryService.assignBulkUserRoles([existingUser.id], tenantId, roleIds, adminId);
               }
 
               if (EmailService.sendWorkspaceAddedNotification) {
@@ -1022,11 +1027,14 @@ export class AdminController {
           const expiresAt = new Date();
           expiresAt.setHours(expiresAt.getHours() + 72); 
 
-          const payloadData = {
-            ...(row.customProfileData || {}),
-            _auto_active: true,
-            _pre_assigned_roles: roleIds // Injected specific roles!
+          const payloadData: any = {
+            ...(row.customProfileData || {})
           };
+
+          if (bypassWaitingRoom) {
+            payloadData._auto_active = true;
+            payloadData._pre_assigned_roles = roleIds;
+          }
 
           await QueryService.createInvitation(
             tenantId, 
