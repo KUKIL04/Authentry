@@ -18,16 +18,24 @@ export const getRolesByTenant = async (tenantId: string) => {
     `SELECT r.id, r.name, r.description, r.is_system_template, r.created_at,
        COALESCE(
          json_agg(
-           json_build_object('moduleId', rm.module_id, 'accessLevel', rm.access_level)
+           json_build_object(
+             'moduleId', rm.module_id, 
+             'accessLevel', rm.access_level,
+             'moduleName', m.name,
+             'appName', a.name,
+             'appId', a.id
+           )
          ) FILTER (WHERE rm.module_id IS NOT NULL), '[]'::json
        ) as bundles
      FROM roles r
      LEFT JOIN role_modules rm ON r.id = rm.role_id
+     LEFT JOIN modules m ON rm.module_id = m.id
+     LEFT JOIN apps a ON m.app_id = a.id
      WHERE r.tenant_id = $1 
         OR (r.is_system_template = TRUE AND EXISTS (
             SELECT 1 FROM role_modules rm2
-            JOIN modules m ON rm2.module_id = m.id
-            JOIN tenant_app_allocations taa ON m.app_id = taa.app_id
+            JOIN modules m2 ON rm2.module_id = m2.id
+            JOIN tenant_app_allocations taa ON m2.app_id = taa.app_id
             WHERE rm2.role_id = r.id AND taa.tenant_id = $1
         ))
      GROUP BY r.id
@@ -94,11 +102,19 @@ export const getSystemRoleTemplates = async () => {
     SELECT r.id, r.name, r.description, r.is_system_template, r.created_at,
        COALESCE(
          json_agg(
-           json_build_object('moduleId', rm.module_id, 'accessLevel', rm.access_level)
+           json_build_object(
+             'moduleId', rm.module_id, 
+             'accessLevel', rm.access_level,
+             'moduleName', m.name,
+             'appName', a.name,
+             'appId', a.id
+           )
          ) FILTER (WHERE rm.module_id IS NOT NULL), '[]'::json
        ) as bundles
      FROM roles r
      LEFT JOIN role_modules rm ON r.id = rm.role_id
+     LEFT JOIN modules m ON rm.module_id = m.id
+     LEFT JOIN apps a ON m.app_id = a.id
      WHERE r.is_system_template = TRUE
      GROUP BY r.id
      ORDER BY r.created_at DESC

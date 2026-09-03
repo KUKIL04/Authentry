@@ -10,6 +10,7 @@ import SystemTelemetry from './pages/dashboard/SystemTelemetry';
 import SgcHealth from './pages/infrastructure/SgcHealth';
 import FeatureFlags from './pages/dashboard/FeatureFlags';
 import AppsManager from './pages/apps/AppsManager';
+import SystemTemplatesManager from './pages/dashboard/SystemTemplatesManager';
 import AdminLogin from './pages/auth/AdminLogin';
 import ProtectedAdminRoute from './components/layout/ProtectedAdminRoute';
 import { AdminAuthProvider } from './hooks/useAdminAuth';
@@ -31,6 +32,7 @@ export default function App() {
               {/* Explicitly define the dashboard route */}
               <Route path="/dashboard" element={<PlatformOverview />} />
               <Route path="/apps" element={<AppsManager />} />
+              <Route path="/blueprints" element={<SystemTemplatesManager />} />
               <Route path="/tenants" element={<TenantList />} />
               <Route path="/tenants/:tenantId" element={<TenantDetails />}/>
               <Route path="/users" element={<GlobalUsers />} />

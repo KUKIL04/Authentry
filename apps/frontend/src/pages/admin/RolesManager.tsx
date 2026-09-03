@@ -422,31 +422,40 @@ export default function RolesManager() {
                 {detailTab === 'PERMISSIONS' && (() => {
                   const parsedBundles = getParsedBundles(selectedRole);
 
-                  const validBundles = parsedBundles.filter(b => {
-                    const info = getModuleInfo(b.moduleId);
-                    return info.appName !== 'Unknown';
-                  });
-                  
                   return (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {validBundles.length === 0 ? (
+                      {parsedBundles.length === 0 ? (
                         <div className="col-span-full flex flex-col items-center justify-center p-12 text-slate-400">
                           <Fingerprint className="w-12 h-12 mb-4 opacity-20" />
                           <span className="text-sm font-bold tracking-wide">This role has no specific module access defined.</span>
                         </div>
                       ) : (
-                        validBundles.map((bundle, idx) => {
-                          const info = getModuleInfo(bundle.moduleId);
+                        parsedBundles.map((bundle, idx) => {
+                          const appName = bundle.appName || getModuleInfo(bundle.moduleId).appName;
+                          const moduleName = bundle.moduleName || getModuleInfo(bundle.moduleId).moduleName;
+                          
+                          // Check if the tenant actually has this app assigned
+                          // 'apps' is the array of apps licensed to THIS specific tenant
+                          const isLicensed = apps.some(a => a.name === appName || a.id === bundle.appId);
+
                           return (
-                            <div key={idx} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-200/60 shadow-sm">
+                            <div key={idx} className={`flex items-center justify-between p-4 rounded-2xl border shadow-sm transition-all ${isLicensed ? 'bg-slate-50 border-slate-200/60' : 'bg-slate-100/50 border-slate-200 border-dashed opacity-50 grayscale'}`}>
                               <div className="flex items-center overflow-hidden mr-3">
-                                <CheckSquare className="w-5 h-5 text-gamboge-500 mr-3 shrink-0" />
+                                {isLicensed ? (
+                                  <CheckSquare className="w-5 h-5 text-gamboge-500 mr-3 shrink-0" />
+                                ) : (
+                                  <ShieldMinus className="w-5 h-5 text-slate-400 mr-3 shrink-0" />
+                                )}
+                                
                                 <div className="min-w-0">
-                                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest truncate">{info.appName}</div>
-                                  <div className="text-sm font-bold text-slate-700 truncate">{info.moduleName}</div>
+                                  <div className="text-[10px] font-bold uppercase tracking-widest truncate flex items-center">
+                                    <span className={isLicensed ? 'text-slate-400' : 'text-slate-500'}>{appName}</span>
+                                    {!isLicensed && <span className="ml-2 text-[8px] bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded">Unlicensed</span>}
+                                  </div>
+                                  <div className={`text-sm font-bold truncate ${isLicensed ? 'text-slate-700' : 'text-slate-500'}`}>{moduleName}</div>
                                 </div>
                               </div>
-                              <span className={`text-[10px] font-extrabold px-2.5 py-1 rounded border tracking-widest shrink-0 ${bundle.accessLevel === 'WRITE' ? 'bg-green-100 text-green-700 border-green-200' : 'bg-white text-slate-500 border-slate-200'}`}>
+                              <span className={`text-[10px] font-extrabold px-2.5 py-1 rounded border tracking-widest shrink-0 ${!isLicensed ? 'bg-slate-200 text-slate-400 border-slate-300' : bundle.accessLevel === 'WRITE' ? 'bg-green-100 text-green-700 border-green-200' : 'bg-white text-slate-500 border-slate-200'}`}>
                                 {bundle.accessLevel}
                               </span>
                             </div>

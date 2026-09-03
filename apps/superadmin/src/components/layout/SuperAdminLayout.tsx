@@ -5,7 +5,8 @@ import { useAdminAuth } from '../../hooks/useAdminAuth';
 import { 
   Terminal, LayoutDashboard, Building2, Users, 
   CreditCard, Activity, Flag, Shield, LogOut, 
-  MoreVertical, ChevronLeft, ChevronRight, Webhook 
+  MoreVertical, ChevronLeft, ChevronRight, Webhook, 
+  Layers
 } from 'lucide-react';
 
 export default function SuperAdminLayout() {
@@ -26,6 +27,7 @@ export default function SuperAdminLayout() {
       items: [
         { name: 'Overview', path: '/dashboard', icon: LayoutDashboard },
         { name: 'Software Suites', path: '/apps', icon: Terminal },
+        { name: 'Role Blueprints', path: '/blueprints', icon: Layers },
         { name: 'Tenant Fleet', path: '/tenants', icon: Building2 },
         { name: 'Global Identity', path: '/users', icon: Users },
       ]

@@ -623,6 +623,21 @@ export class AuthController {
 
       const passwordHash = await CryptoService.hashPassword(password);
 
+      // ENTERPRISE BYPASS: Extract hidden HR instructions from the JSON payload
+      const inviteData = typeof invite.custom_profile_data === 'string' 
+          ? JSON.parse(invite.custom_profile_data) 
+          : (invite.custom_profile_data || {});
+      const isAutoActive = inviteData._auto_active === true;
+      const preAssignedRoles = inviteData._pre_assigned_roles || [];
+      
+      // Clean up the hidden fields so they don't pollute the user's permanent record
+      delete inviteData._auto_active;
+      delete inviteData._pre_assigned_roles;
+
+      // Merges the user-provided data with the HR-provided data
+      const mergedCustomData = { ...inviteData, ...(customProfileData || {}) };
+
+      
       // Creates new user defaulted to 'PENDING' state (Waiting Room)
       const newUser = await QueryService.createUser({
         tenantId: invite.tenant_id,
@@ -635,9 +650,34 @@ export class AuthController {
         countryCode: countryCode || '91',
         isTenantAdmin: false,
         status: 'PENDING',
-        customProfileData: customProfileData || {},
+        customProfileData: mergedCustomData,
         employeeId: invite.employee_id
       });
+
+      // ATTACH ROLES & DISPATCH EVENTS (The Auto-Active Flow)
+      if (isAutoActive) {
+        if (Array.isArray(preAssignedRoles)) {
+          for (const roleId of preAssignedRoles) {
+            // We use newUser.id as the assigner since this is an automated system action
+            await QueryService.assignUserRole(newUser.id, invite.tenant_id, roleId, newUser.id);
+          }
+        }
+
+        // Fetch full context for Webhook Delivery
+        const accessContext = await QueryService.getUserAccessContext(newUser.id, invite.tenant_id);
+
+        // DISPATCH CRITICAL IDENTITY EVENT TO WEBHOOK SUBSCRIBERS
+        await EventDispatcherService.dispatch(invite.tenant_id, 'user.access.granted', {
+          userId: newUser.id,
+          email: newUser.email,
+          firstName: newUser.first_name,
+          lastName: newUser.last_name,
+          status: 'ACTIVE',
+          roles: accessContext.roles,
+          entitlements: accessContext.entitlements,
+          isAdmin: false
+        }, 1);
+      }
 
       await QueryService.updateInvitationStatus(invite.id, 'ACCEPTED');
 
@@ -647,7 +687,7 @@ export class AuthController {
         'USER_SIGNUP',
         req.ip || '127.0.0.1',
         req.headers['user-agent'] || 'unknown',
-        { inviteId: invite.id }
+        { inviteId: invite.id, bypassedWaitingRoom: isAutoActive  }
       );
 
       return res.status(201).json({

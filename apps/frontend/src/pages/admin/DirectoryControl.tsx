@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { AdminAPI } from '../../api/admin.api';
 import { useAuth } from '../../hooks/useAuth';
 import { useDropzone } from 'react-dropzone';
-import { Users, Loader2, Activity, Ban, KeyRound, ShieldAlert, AlertTriangle, X, UserX, UserCheck, RefreshCcw, Search, Download, Columns, Eye, UploadCloud, Phone, Mail, CheckCircle2, Check, Edit3 } from 'lucide-react';
+import { Users, Loader2, Activity, Ban, KeyRound, ShieldAlert, AlertTriangle, X, UserX, UserCheck, RefreshCcw, Search, Download, Columns, Eye, UploadCloud, Phone, Mail, CheckCircle2, Check, Edit3, ChevronDown } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
 export default function DirectoryControl() {
@@ -24,7 +24,7 @@ export default function DirectoryControl() {
   const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
 
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
-  const [importStep, setImportStep] = useState<1 | 2 | 3>(1);
+  const [importStep, setImportStep] = useState<1 | 2 | 3 | 4>(1);
   const [importedHeaders, setImportedHeaders] = useState<string[]>([]);
   const [importedRows, setImportedRows] = useState<any[]>([]);
   const [emailMapping, setEmailMapping] = useState<string>('');
@@ -39,9 +39,17 @@ export default function DirectoryControl() {
 
   const [importResults, setImportResults] = useState<{ successCount: number; failureCount: number; errors: string[] } | null>(null);
 
+  const [userRoleSelections, setUserRoleSelections] = useState<Record<string, string[]>>({});
+  const [openImportDropdownId, setOpenImportDropdownId] = useState<string | null>(null);
+  const importDropdownRef = useRef<HTMLDivElement>(null);
+
   const exportMenuRef = useRef<HTMLDivElement>(null);
  
   const columnsMenuRef = useRef<HTMLDivElement>(null);
+
+  const [roles, setRoles] = useState<any[]>([]);
+  const [mappedPreview, setMappedPreview] = useState<any[]>([]);
+
 
   const [modal, setModal] = useState<{ 
     isOpen: boolean; type: 'RESET' | 'UNLOCK' | 'TOGGLE_STATUS' | null; user: any | null;
@@ -56,6 +64,9 @@ export default function DirectoryControl() {
       }
       if (exportMenuRef.current && !exportMenuRef.current.contains(event.target as Node)) {
         setIsExportMenuOpen(false);
+      }
+      if (importDropdownRef.current && !importDropdownRef.current.contains(event.target as Node)) {
+        setOpenImportDropdownId(null);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -174,16 +185,18 @@ export default function DirectoryControl() {
     reader.onload = (e) => {
       try {
         const data = new Uint8Array(e.target?.result as ArrayBuffer);
-        const workbook = XLSX.read(data, { type: 'array' });
+        const workbook = XLSX.read(data, { 
+          type: 'array',
+          cellDates: true 
+        });
         const firstSheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[firstSheetName];
         
-        // Convert to JSON (array of arrays to easily grab headers)
         const jsonData = XLSX.utils.sheet_to_json(worksheet, { 
           header: 1, 
-          raw: false, 
-          dateNF: 'yyyy-mm-dd' 
-        });
+          raw: true, // Prevents locale-specific string formatting
+          defval: ''
+        }) as any[][]; 
         
         if (jsonData.length < 2) {
           notify('error', 'File appears to be empty or missing headers.');
@@ -191,10 +204,25 @@ export default function DirectoryControl() {
         }
 
         const headers = jsonData[0] as string[];
-        const rows = jsonData.slice(1); // The actual user data
+        const rawRows = jsonData.slice(1);
         
+        const sanitizedRows = rawRows.map((row) => 
+          row.map(cell => {
+            // If Excel recognized it as a valid date, it's now a JS Date object
+            if (cell instanceof Date) {
+              // Extract locally to prevent UTC timezone shifting
+              const yyyy = cell.getFullYear();
+              const mm = String(cell.getMonth() + 1).padStart(2, '0');
+              const dd = String(cell.getDate()).padStart(2, '0');
+              return `${yyyy}-${mm}-${dd}`;
+            }
+            
+            return cell !== null && cell !== undefined ? String(cell).trim() : '';
+          })
+        );
+
         setImportedHeaders(headers);
-        setImportedRows(rows);
+        setImportedRows(sanitizedRows);
         
         // Auto-guess columns
         const autoEmail = headers.find(h => h.toLowerCase().includes('email') || h.toLowerCase().includes('mail'));
@@ -226,46 +254,56 @@ export default function DirectoryControl() {
     maxFiles: 1
   });
 
-  const handleExecuteImport = async () => {
+  const handleGeneratePreview = () => {
     if (!emailMapping) return notify('error', 'You must map the Email column to proceed.');
     
-    setIsProcessing(true);
-    
-    // Find the index of the selected email column
     const emailIndex = importedHeaders.indexOf(emailMapping);
     const firstIndex = importedHeaders.indexOf(firstNameMapping);
     const lastIndex = importedHeaders.indexOf(lastNameMapping);
     const empIndex = importedHeaders.indexOf(employeeIdMapping);
 
-    // Construct the payload with dynamic schema mapping
-    const mappedUsers = importedRows.map(row => {
+    const mapped = importedRows.map(row => {
       const customProfileData: Record<string, any> = {};
-      
-      // Loop through schema and pull mapped data
       schema.forEach(field => {
         const mappedHeaderName = customMappings[field.id];
         if (mappedHeaderName) {
           const colIdx = importedHeaders.indexOf(mappedHeaderName);
-          if (colIdx !== -1 && row[colIdx] !== undefined) {
-            customProfileData[field.id] = row[colIdx];
-          }
+          if (colIdx !== -1 && row[colIdx] !== undefined) customProfileData[field.id] = row[colIdx];
         }
       });
 
+      const emailVal = row[emailIndex]?.toString().toLowerCase().trim();
+      const existsInWorkspace = users.some(u => u.email.toLowerCase() === emailVal);
+
       return {
-        email: row[emailIndex],
+        email: emailVal,
         employeeId: empIndex !== -1 ? row[empIndex] : undefined,
         firstName: firstIndex !== -1 ? row[firstIndex] : undefined,
         lastName: lastIndex !== -1 ? row[lastIndex] : undefined,
-        customProfileData
+        customProfileData,
+        existsInWorkspace // Add to object!
       };
     }).filter(u => u.email);
 
+    setMappedPreview(mapped);
+    setUserRoleSelections({});
+    setImportStep(3); 
+  };
+
+  const handleExecuteImport = async () => {
+    setIsProcessing(true);
     try {
-      const res = await AdminAPI.bulkImportUsers(mappedUsers);
+      const finalPayload = mappedPreview
+        .filter(u => !u.existsInWorkspace)
+        .map(u => ({
+          ...u,
+          roleIds: userRoleSelections[u.email] || []
+        }));
+
+      const res = await AdminAPI.bulkImportUsers(finalPayload);
       setImportResults(res);
-      setImportStep(3); // Move to Results Step
-      fetchData(); // Refresh directory in background
+      setImportStep(4); 
+      fetchData(); 
     } catch (err: any) {
       notify('error', err.response?.data?.error || 'Bulk import failed.');
     } finally {
@@ -715,8 +753,7 @@ export default function DirectoryControl() {
       {/* BULK IMPORT WIZARD MODAL */}
       {isImportModalOpen && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 md:pl-32 lg:pl-140">
-          <div className="bg-white rounded-3xl w-full max-w-2xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh] animate-in fade-in zoom-in-95 duration-200">
-            
+          <div className={`bg-white rounded-3xl w-full transition-all duration-300 overflow-hidden shadow-2xl flex flex-col max-h-[90vh] animate-in fade-in zoom-in-95 ${importStep === 3 ? 'max-w-6xl' : 'max-w-2xl'}`}>
             {/* Header */}
             <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50 shrink-0">
               <div>
@@ -853,8 +890,130 @@ export default function DirectoryControl() {
                 </>
               )}
 
-              {/* STEP 3: RESULTS */}
-              {importStep === 3 && importResults && (
+              {/* STEP 3: DATA PREVIEW & ROLE ASSIGNMENT */}
+              {importStep === 3 && (
+                <>
+                  {isProcessing ? (
+                    <div className="flex flex-col items-center justify-center py-20 text-center animate-in zoom-in-95 duration-300">
+                      <div className="w-20 h-20 relative mb-6">
+                        <div className="absolute inset-0 border-4 border-slate-100 rounded-full"></div>
+                        <div className="absolute inset-0 border-4 border-gamboge-500 rounded-full border-t-transparent animate-spin"></div>
+                        <Mail className="absolute inset-0 m-auto w-8 h-8 text-gamboge-600 animate-pulse" />
+                      </div>
+                      <h3 className="text-xl font-extrabold text-slate-800 mb-2">Dispatching Roster & Invitations</h3>
+                      <p className="text-sm font-medium text-slate-500 max-w-xs">
+                        Injecting personnel into directory and securely distributing initial access tokens.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-6 animate-in slide-in-from-right-4 flex flex-col h-full">
+                      
+                      <div>
+                        <h3 className="text-sm font-bold text-slate-800 border-b border-slate-200 pb-2 mb-3">Review & Provision Job Titles</h3>
+                        <p className="text-[11px] font-medium text-slate-500 mb-4 leading-relaxed max-w-3xl">
+                          Review extracted data. Assign specific Job Titles to users via the dropdowns below. These employees will <strong className="text-gamboge-600">bypass the waiting room</strong> and receive active access instantly upon registration.
+                        </p>
+                        
+                        {/* 🚨 Horizontally & Vertically Scrollable Container */}
+                        <div className="border border-slate-200 rounded-xl overflow-x-auto overflow-y-auto shadow-sm max-h-[500px] neumorphic-scrollbar relative">
+                          <table className="w-full text-left text-xs bg-white whitespace-nowrap border-separate border-spacing-0">
+                            <thead className="bg-slate-50 sticky top-0 z-20">
+                              <tr>
+                                <th className="p-4 font-bold text-slate-600 sticky left-0 bg-slate-50 z-30 shadow-[1px_0_0_0_#e2e8f0] shadow-b-[1px_0_0_0_#e2e8f0]">User Email</th>
+                                <th className="p-4 font-bold text-slate-600 border-b border-slate-200">Name</th>
+                                <th className="p-4 font-bold text-slate-600 border-b border-slate-200">Emp ID</th>
+                                {schema.map(f => (
+                                  <th key={f.id} className="p-4 font-bold text-gamboge-700 border-b border-slate-200">{f.label}</th>
+                                ))}
+                                <th className="p-4 font-bold text-slate-600 border-b border-slate-200">Assign Job Titles</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                              {mappedPreview.map((u, idx) => (
+                                <tr key={idx} className={u.existsInWorkspace ? "opacity-60 bg-slate-50/50" : "hover:bg-slate-50 transition-colors"}>
+                                  
+                                  {/* Sticky First Column */}
+                                  <td className={`p-4 font-medium sticky left-0 z-10 shadow-[1px_0_0_0_#f1f5f9] ${u.existsInWorkspace ? 'bg-slate-50 text-slate-500' : 'bg-white text-slate-700 group-hover:bg-slate-50'}`}>
+                                    {u.email}
+                                    {u.existsInWorkspace && <span className="block text-[9px] text-gamboge-600 font-bold uppercase mt-1 tracking-widest">Already in Directory</span>}
+                                  </td>
+                                  
+                                  <td className="p-4 text-slate-600 border-b border-slate-100">{u.firstName} {u.lastName}</td>
+                                  <td className="p-4 font-mono text-slate-400 border-b border-slate-100">{u.employeeId || '-'}</td>
+                                  
+                                  {schema.map(f => (
+                                    <td key={f.id} className="p-4 text-slate-500 border-b border-slate-100">{u.customProfileData[f.id] || '-'}</td>
+                                  ))}
+                                  
+                                  <td className="p-4 border-b border-slate-100">
+                                    {u.existsInWorkspace ? (
+                                       <span className="text-[10px] uppercase font-bold text-slate-400 tracking-widest">Skipped</span>
+                                    ) : (
+                                      <div className="relative inline-block text-left w-[220px]" ref={openImportDropdownId === u.email ? importDropdownRef : null}>
+                                        <button
+                                          onClick={() => setOpenImportDropdownId(openImportDropdownId === u.email ? null : u.email)}
+                                          className={`w-full px-3 py-2 bg-slate-100 border hover:bg-white text-xs font-bold rounded-lg flex items-center justify-between shadow-sm transition-all ${
+                                            userRoleSelections[u.email]?.length ? 'border-gamboge-400 text-gamboge-700 ring-1 ring-gamboge-100' : 'border-slate-200 text-slate-600'
+                                          }`}
+                                        >
+                                          <span className="truncate mr-2">
+                                            {userRoleSelections[u.email]?.length 
+                                              ? `${userRoleSelections[u.email].length} Selected` 
+                                              : 'Select Roles'}
+                                          </span>
+                                          <ChevronDown className={`w-4 h-4 shrink-0 transition-transform ${openImportDropdownId === u.email ? 'rotate-180 text-gamboge-500' : 'text-slate-400'}`} />
+                                        </button>
+
+                                        {openImportDropdownId === u.email && (
+                                          <div className="absolute z-50 mt-1 w-56 rounded-2xl bg-white shadow-[0_10px_40px_-10px_rgba(0,0,0,0.2)] border border-slate-200 py-2 right-0 animate-in fade-in zoom-in-95">
+                                            <div className="max-h-48 overflow-y-auto neumorphic-scrollbar px-1">
+                                              {roles.length === 0 ? (
+                                                <div className="px-3 py-4 text-center text-[10px] uppercase tracking-widest text-slate-400 font-bold">No roles defined</div>
+                                              ) : (
+                                                roles.map(role => {
+                                                  const isSelected = userRoleSelections[u.email]?.includes(role.id);
+                                                  return (
+                                                    <label key={role.id} className="flex items-center px-3 py-2 hover:bg-slate-50 rounded-xl cursor-pointer transition-colors group">
+                                                      <input 
+                                                        type="checkbox" 
+                                                        checked={isSelected}
+                                                        onChange={(e) => {
+                                                          setUserRoleSelections(prev => {
+                                                            const current = prev[u.email] || [];
+                                                            return {
+                                                              ...prev,
+                                                              [u.email]: e.target.checked ? [...current, role.id] : current.filter(id => id !== role.id)
+                                                            }
+                                                          });
+                                                        }}
+                                                        className="w-4 h-4 rounded border-slate-300 text-gamboge-600 focus:ring-gamboge-500 accent-gamboge-600 mr-3 shrink-0"
+                                                      />
+                                                      <span className={`text-xs font-bold truncate ${isSelected ? 'text-gamboge-700' : 'text-slate-600 group-hover:text-slate-800'}`}>
+                                                        {role.name}
+                                                      </span>
+                                                    </label>
+                                                  );
+                                                })
+                                              )}
+                                            </div>
+                                          </div>
+                                        )}
+                                      </div>
+                                    )}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {/* STEP 4: RESULTS */}
+              {importStep === 4 && importResults && (
                 <div className="space-y-6 animate-in slide-in-from-right-4">
                   <div className="flex flex-col items-center justify-center p-8 text-center bg-slate-50 rounded-3xl border border-slate-200">
                     <div className="w-16 h-16 bg-green-100 text-green-600 rounded-full flex items-center justify-center mb-4 border border-green-200 shadow-inner">
@@ -862,7 +1021,7 @@ export default function DirectoryControl() {
                     </div>
                     <h3 className="text-xl font-bold text-slate-800 mb-1">Import Completed</h3>
                     <p className="text-sm font-medium text-slate-500">
-                      Successfully invited <strong>{importResults.successCount}</strong> personnel.
+                      Successfully secured and provisioned <strong>{importResults.successCount}</strong> personnel.
                     </p>
                   </div>
 
@@ -891,12 +1050,20 @@ export default function DirectoryControl() {
               {importStep === 2 && (
                 <>
                   <button onClick={() => setImportStep(1)} disabled={isProcessing} className="px-6 py-3 text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 shadow-sm font-bold rounded-xl text-xs uppercase tracking-widest transition-colors">Back</button>
-                  <button onClick={handleExecuteImport} disabled={isProcessing || !emailMapping} className="shine-btn px-8 py-3 text-white font-bold rounded-xl text-xs uppercase tracking-widest disabled:opacity-50 flex items-center shadow-lg">
-                    {isProcessing ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null} Execute Import
+                  <button onClick={handleGeneratePreview} disabled={isProcessing || !emailMapping} className="shine-btn px-8 py-3 text-white font-bold rounded-xl text-xs uppercase tracking-widest disabled:opacity-50 flex items-center shadow-lg">
+                    Review & Target
                   </button>
                 </>
               )}
               {importStep === 3 && (
+                <>
+                  <button onClick={() => setImportStep(2)} disabled={isProcessing} className="px-6 py-3 text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 shadow-sm font-bold rounded-xl text-xs uppercase tracking-widest transition-colors">Back</button>
+                  <button onClick={handleExecuteImport} disabled={isProcessing} className="shine-btn px-8 py-3 text-white font-bold rounded-xl text-xs uppercase tracking-widest disabled:opacity-50 flex items-center shadow-lg">
+                    {isProcessing ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null} Execute Provisioning
+                  </button>
+                </>
+              )}
+              {importStep === 4 && (
                 <button onClick={closeImportModal} className="px-8 py-3 bg-slate-800 hover:bg-slate-900 text-white font-bold rounded-xl text-xs uppercase tracking-widest transition-colors shadow-md">Done</button>
               )}
             </div>

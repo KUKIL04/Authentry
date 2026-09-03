@@ -2,8 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { SuperAdminAPI } from '../../api/superadmin.api';
 import { 
   Server, Plus, RefreshCw, Webhook, Layers, 
-  Copy, ShieldAlert, Loader2, X, ChevronRight, Trash2, 
-  Activity
+  Copy, ShieldAlert, Loader2, X, ChevronRight, Trash2 
 } from 'lucide-react';
 
 export default function AppsManager() {
@@ -195,7 +194,6 @@ export default function AppsManager() {
   };
 
   return (
-    // 🚨 FIX 1: Master Container is full height with hidden overflow
     <div className="flex flex-col h-[calc(100vh-100px)] animate-in fade-in duration-500 text-white">
       
       {/* Header - Fixed at Top */}
@@ -230,7 +228,6 @@ export default function AppsManager() {
           No software suites registered. Click "Register Suite" to initialize your first app.
         </div>
       ) : (
-        // 🚨 FIX 2: Split Panes - Independently Scrollable
         <div className="flex-1 flex flex-col lg:flex-row gap-8 overflow-hidden pb-4">
           
           {/* Left Column (Master): Fixed Width, Independent Scroll */}
@@ -289,7 +286,7 @@ export default function AppsManager() {
                     </button>
                   </div>
 
-                  <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
                     <div className="bg-slate-950 border border-slate-800 p-4 rounded-2xl flex items-center justify-between group transition-all hover:border-slate-700">
                       <div className="min-w-0 pr-4">
                         <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1">Production Endpoint</span>
@@ -315,17 +312,6 @@ export default function AppsManager() {
                       >
                         <Copy className="w-4 h-4" />
                       </button>
-                    </div>
-                    <div className="bg-slate-950 border border-slate-800 p-4 rounded-2xl flex items-center justify-between group transition-all hover:border-slate-700">
-                      <div className="min-w-0 pr-4">
-                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1">Global API Traffic</span>
-                        <span className="font-mono text-xs text-emerald-400 font-bold block truncate">
-                          {selectedApp.total_api_calls?.toLocaleString() || 0} requests
-                        </span>
-                      </div>
-                      <div className="p-2 bg-slate-900 border border-slate-700 rounded-lg shrink-0 group-hover:bg-slate-800 transition-colors">
-                         <Activity className="w-4 h-4 text-emerald-500" />
-                      </div>
                     </div>
                   </div>
                 </div>

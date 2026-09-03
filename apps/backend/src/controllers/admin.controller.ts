@@ -987,6 +987,7 @@ export class AdminController {
         }
 
         const email = row.email.toLowerCase().trim();
+        const roleIds = row.roleIds || [];
 
         try {
           // 1. Check if they already exist globally
@@ -996,7 +997,12 @@ export class AdminController {
             // Check if they are already in this workspace
             const membershipCheck = await QueryService.getWorkspaceMembership(existingUser.id, tenantId);
             if (!membershipCheck) {
-              await QueryService.addWorkspaceMembership(existingUser.id, tenantId, 'PENDING', row.customProfileData, row.employeeId);
+              await QueryService.addWorkspaceMembership(existingUser.id, tenantId, 'ACTIVE', row.customProfileData, row.employeeId);
+              
+              for (const roleId of roleIds) {
+                await QueryService.assignUserRole(existingUser.id, tenantId, roleId, adminId);
+              }
+
               if (EmailService.sendWorkspaceAddedNotification) {
                 await EmailService.sendWorkspaceAddedNotification(email, tenantRecord?.name || 'A new workspace');
               }
@@ -1016,6 +1022,12 @@ export class AdminController {
           const expiresAt = new Date();
           expiresAt.setHours(expiresAt.getHours() + 72); 
 
+          const payloadData = {
+            ...(row.customProfileData || {}),
+            _auto_active: true,
+            _pre_assigned_roles: roleIds // Injected specific roles!
+          };
+
           await QueryService.createInvitation(
             tenantId, 
             email, 
@@ -1024,7 +1036,7 @@ export class AdminController {
             expiresAt,
             row.firstName,
             row.lastName,
-            row.customProfileData,
+            payloadData,
             row.employeeId
           );
 
