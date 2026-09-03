@@ -123,6 +123,11 @@ export class WebhookController {
         authentry.auth.blockTenantLocally(tenantId);
         break;
 
+      case 'tenant.app.allocated':
+        console.log(`🔓 [Sandbox Router] Lifting Tenant Kill-Switch for ${tenantId}`);
+        authentry.auth.unblockTenantLocally(tenantId);
+        break;
+
       case 'user.session.revoked':
       case 'user.password_reset.forced':
         if (userId) authentry.auth.blockUserLocally(userId);
