@@ -364,14 +364,10 @@ CREATE INDEX IF NOT EXISTS idx_users_blacklisted ON users(is_blacklisted) WHERE 
 -- ==========================================
 INSERT INTO plan_definitions (code, name, monthly_price_usd, max_mau, max_api_requests, tier_rank)
 VALUES 
-  ('FREE_TIER', 'Free Workspace', 0.00, 100, 10000, 0),
-  ('PREMIUM_TIER', 'Premium Workspace', 49.00, NULL, NULL, 10),
+  ('FREE_TIER', 'Free Workspace', 0.00, 100, 1000, 0),
+  ('PREMIUM_TIER', 'Premium Workspace', 49.00, 1000, 10000, 10),
   ('ENTERPRISE', 'Enterprise Workspace', 199.00, NULL, NULL, 20)
-ON CONFLICT (code) DO UPDATE 
-SET monthly_price_usd = EXCLUDED.monthly_price_usd,
-    max_mau = EXCLUDED.max_mau,
-    max_api_requests = EXCLUDED.max_api_requests,
-    tier_rank = EXCLUDED.tier_rank;
+ON CONFLICT (code) DO NOTHING;
 
 INSERT INTO feature_flags (feature_key, description, min_plan_code)
 VALUES 
