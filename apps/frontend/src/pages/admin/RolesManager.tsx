@@ -445,7 +445,7 @@ export default function RolesManager() {
                           
                           // Check if the tenant actually has this app assigned
                           // 'apps' is the array of apps licensed to THIS specific tenant
-                          const isLicensed = apps.some(a => a.name === appName || a.id === bundle.appId);
+                          const isLicensed = apps.some((a: any) => (a.app_id || a.id) === bundle.appId);
 
                           return (
                             <div key={idx} className={`flex items-center justify-between p-4 rounded-2xl border shadow-sm transition-all ${isLicensed ? 'bg-slate-50 border-slate-200/60' : 'bg-slate-100/50 border-slate-200 border-dashed opacity-50 grayscale'}`}>
