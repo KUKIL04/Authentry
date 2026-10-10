@@ -9,6 +9,7 @@ const setAccessTokenCookie = (res: Response, accessToken: string) => {
   res.cookie('accessToken', accessToken, {
     httpOnly: true,
     secure: isProd,
+    partitioned: isProd,
     sameSite: isProd ? 'none' : 'lax',
     path: '/',
     maxAge: 15 * 60 * 1000 // 15 mins

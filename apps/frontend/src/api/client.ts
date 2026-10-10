@@ -2,7 +2,7 @@ import axios from 'axios';
 
 // A centralized Axios instance for authenticated requests
 export const apiClient = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:3333/api/v1',
+  baseURL: import.meta.env.VITE_API_URL || '/api/v1',
   headers: {
     'Content-Type': 'application/json',
   },
@@ -70,7 +70,7 @@ apiClient.interceptors.response.use(
 
 // A clean instance for public routes (Login, Register, Invites, Logout)
 export const publicClient = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:3333/api/v1',
+  baseURL: import.meta.env.VITE_API_URL || '/api/v1',
   headers: {
     'Content-Type': 'application/json',
   },

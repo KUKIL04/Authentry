@@ -17,6 +17,7 @@ const setAuthCookies = (res: Response, accessToken: string, refreshToken: string
   const baseOptions = {
     httpOnly: true,
     secure: isProd, // Must be true on HTTPS
+    partitioned: isProd,
     sameSite: isProd ? 'none' as const : 'lax' as const, // Lax needed for local dev across ports
     path: '/'
   };
@@ -30,6 +31,7 @@ const clearAuthCookies = (res: Response) => {
   const baseOptions = {
     httpOnly: true,
     secure: isProd,
+    partitioned: isProd,
     sameSite: isProd ? 'none' as const : 'lax' as const,
     path: '/'
   };
