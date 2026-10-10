@@ -5,6 +5,7 @@ import { EmailService } from '../services/email.service.js';
 import { EventDispatcherService } from '../services/event-dispatcher.service.js';
 import { CryptoService } from '../services/crypto.service.js';
 import { redisClient } from '../db/redis.js';
+import { RequestUtil } from '../utils/request.util.js';
 
 export class SuperAdminController {
 
@@ -24,7 +25,7 @@ export class SuperAdminController {
       try {
         const app = await QueryService.createApp(name, description, productionUrl, clientId, clientSecretHash);
 
-        await QueryService.logSuperAdminEvent(req.user?.userId!, 'GLOBAL_APP_REGISTERED', req.ip || '127.0.0.1');
+        await QueryService.logSuperAdminEvent(req.user?.userId!, 'GLOBAL_APP_REGISTERED', RequestUtil.getIp(req));
 
         return res.status(201).json({ 
           success: true, 
@@ -63,7 +64,7 @@ export class SuperAdminController {
 
       const module = await QueryService.createAppModule(appId, name, description);
       
-      await QueryService.logSuperAdminEvent(req.user?.userId!, 'APP_MODULE_CREATED', req.ip || '127.0.0.1');
+      await QueryService.logSuperAdminEvent(req.user?.userId!, 'APP_MODULE_CREATED', RequestUtil.getIp(req));
       return res.status(201).json(module);
     } catch (err) { next(err); }
   }
@@ -101,7 +102,7 @@ export class SuperAdminController {
         reason: 'superadmin_license_granted'
       }, 1);
       
-      await QueryService.logSuperAdminEvent(superAdminId, 'TENANT_ALLOCATION_GRANTED', req.ip || '127.0.0.1');
+      await QueryService.logSuperAdminEvent(superAdminId, 'TENANT_ALLOCATION_GRANTED', RequestUtil.getIp(req));
 
       return res.json({ success: true, message: 'Software suite successfully licensed to Tenant.' });
     } catch (err) { next(err); }
@@ -123,7 +124,7 @@ export class SuperAdminController {
       // Delete the Tenant Roles, Overrides, and Allocations from the database
       await QueryService.revokeAppFromTenant(tenantId, appId);
 
-      await QueryService.logSuperAdminEvent(req.user?.userId!, 'TENANT_ALLOCATION_REVOKED', req.ip || '127.0.0.1');
+      await QueryService.logSuperAdminEvent(req.user?.userId!, 'TENANT_ALLOCATION_REVOKED', RequestUtil.getIp(req));
 
       return res.json({ success: true, message: 'Software suite license revoked. End-user access purged.' });
     } catch (err) { next(err); }
@@ -145,7 +146,7 @@ export class SuperAdminController {
       // Changed from createModuleWebhook to createAppWebhook
       const endpoint = await QueryService.createAppWebhook(appId, url, signingSecret, events);
 
-      await QueryService.logSuperAdminEvent(req.user?.userId!, 'APP_WEBHOOK_REGISTERED', req.ip || '127.0.0.1');
+      await QueryService.logSuperAdminEvent(req.user?.userId!, 'APP_WEBHOOK_REGISTERED', RequestUtil.getIp(req));
 
       return res.status(201).json({
         success: true,
@@ -245,7 +246,7 @@ export class SuperAdminController {
         return res.json({ success: true, count: 0, details: 'Infrastructure is fully synchronized.' });
       }
 
-      await QueryService.logSuperAdminEvent(req.user?.userId!, 'GLOBAL_SGC_TRIGGERED', req.ip || '127.0.0.1');
+      await QueryService.logSuperAdminEvent(req.user?.userId!, 'GLOBAL_SGC_TRIGGERED', RequestUtil.getIp(req));
 
       return res.json({ 
         success: true, 
@@ -277,7 +278,7 @@ export class SuperAdminController {
         }
       }
 
-      await QueryService.logSuperAdminEvent(req.user?.userId!, 'SYSTEM_ROLE_TEMPLATE_CREATED', req.ip || '127.0.0.1', { roleName: name });
+      await QueryService.logSuperAdminEvent(req.user?.userId!, 'SYSTEM_ROLE_TEMPLATE_CREATED', RequestUtil.getIp(req), { roleName: name });
       return res.status(201).json({ success: true, role: newRole, message: 'System Role Template published.' });
     } catch (err) { next(err); }
   }
@@ -311,7 +312,7 @@ export class SuperAdminController {
         }
       }
 
-      await QueryService.logSuperAdminEvent(req.user?.userId!, 'SYSTEM_ROLE_TEMPLATE_UPDATED', req.ip || '127.0.0.1', { roleId, roleName: name });
+      await QueryService.logSuperAdminEvent(req.user?.userId!, 'SYSTEM_ROLE_TEMPLATE_UPDATED', RequestUtil.getIp(req), { roleId, roleName: name });
       return res.json({ success: true, role: updatedRole, message: 'Template updated successfully.' });
     } catch (err) { next(err); }
   }
@@ -323,7 +324,7 @@ export class SuperAdminController {
       const deleted = await QueryService.deleteSystemRoleTemplate(roleId);
       if (!deleted) return res.status(404).json({ error: 'Template not found.' });
 
-      await QueryService.logSuperAdminEvent(req.user?.userId!, 'SYSTEM_ROLE_TEMPLATE_DELETED', req.ip || '127.0.0.1', { roleId });
+      await QueryService.logSuperAdminEvent(req.user?.userId!, 'SYSTEM_ROLE_TEMPLATE_DELETED', RequestUtil.getIp(req), { roleId });
       return res.json({ success: true, message: 'Template permanently deleted.' });
     } catch (err) { next(err); }
   }
@@ -425,7 +426,7 @@ export class SuperAdminController {
         await redisClient.del(redisKey);
       }
 
-      await QueryService.logSuperAdminEvent(req.user?.userId!, `TENANT_${status}`, req.ip || '127.0.0.1', { target_tenant_id: tenantId });
+      await QueryService.logSuperAdminEvent(req.user?.userId!, `TENANT_${status}`, RequestUtil.getIp(req), { target_tenant_id: tenantId });
 
       try {
         const admins = await QueryService.getTenantAdmins(tenantId);
@@ -514,7 +515,7 @@ export class SuperAdminController {
       await QueryService.logSuperAdminEvent(
         req.user?.userId!, 
         isBlacklisted ? 'GLOBAL_BLACKLIST_APPLIED' : 'GLOBAL_BLACKLIST_LIFTED', 
-        req.ip || '127.0.0.1', 
+        RequestUtil.getIp(req), 
         { target_user_id: userId }
       );
 
@@ -567,7 +568,7 @@ export class SuperAdminController {
 
       const purgedCount = await QueryService.flushDeadLetterQueue();
 
-      await QueryService.logSuperAdminEvent(req.user?.userId!, 'TELEMETRY_FLUSHED', req.ip || '127.0.0.1', { purgedGhostWebhooks: purgedCount });
+      await QueryService.logSuperAdminEvent(req.user?.userId!, 'TELEMETRY_FLUSHED', RequestUtil.getIp(req), { purgedGhostWebhooks: purgedCount });
 
       return res.json({ 
         success: true, 

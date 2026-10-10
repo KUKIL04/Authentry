@@ -2,11 +2,40 @@ import { Request, Response, NextFunction } from 'express';
 import { QueryService } from '../services/query.service.js';
 import { CryptoService } from '../services/crypto.service.js';
 import { EventDispatcherService } from '../services/event-dispatcher.service.js';
+import { EmailService } from '../services/email.service.js';
+import { PushService } from '../services/push.service.js';
 import { redisClient } from '../db/redis.js';
+import { RequestUtil } from '../utils/request.util.js';
 import { OtpService } from '../services/otp.service.js';
 import { AuthenticatedRequest } from '../middlewares/auth.js';
 import { AppRequest } from '../middlewares/api-key.js';
 import crypto from 'crypto';
+
+const setAuthCookies = (res: Response, accessToken: string, refreshToken: string) => {
+  const isProd = process.env.NODE_ENV === 'production';
+  
+  const baseOptions = {
+    httpOnly: true,
+    secure: isProd, // Must be true on HTTPS
+    sameSite: isProd ? 'none' as const : 'lax' as const, // Lax needed for local dev across ports
+    path: '/'
+  };
+
+  res.cookie('accessToken', accessToken, { ...baseOptions, maxAge: 15 * 60 * 1000 }); // 15 mins
+  res.cookie('refreshToken', refreshToken, { ...baseOptions, maxAge: 7 * 24 * 60 * 60 * 1000 }); // 7 days
+};
+
+const clearAuthCookies = (res: Response) => {
+  const isProd = process.env.NODE_ENV === 'production';
+  const baseOptions = {
+    httpOnly: true,
+    secure: isProd,
+    sameSite: isProd ? 'none' as const : 'lax' as const,
+    path: '/'
+  };
+  res.clearCookie('accessToken', baseOptions);
+  res.clearCookie('refreshToken', baseOptions);
+};
 
 export class AuthController {
   // --- DEDICATED SUPERADMIN LOGIN ---
@@ -49,14 +78,14 @@ export class AuthController {
       const expiry = new Date();
       expiry.setDate(expiry.getDate() + 7);
 
-      await QueryService.saveRefreshToken(user.id, 'SYSTEM', hashedRefresh, expiry, req.ip || '127.0.0.1', req.headers['user-agent'] as string || 'unknown');
+      await QueryService.saveRefreshToken(user.id, 'SYSTEM', hashedRefresh, expiry, RequestUtil.getIp(req), RequestUtil.getAgent(req));
 
       // Logs the login event directly to the highly secure superadmin_audit_logs
-      await QueryService.logSuperAdminEvent(user.id, 'SUPERADMIN_LOGIN', req.ip || '127.0.0.1');
+      await QueryService.logSuperAdminEvent(user.id, 'SUPERADMIN_LOGIN', RequestUtil.getIp(req));
+
+      setAuthCookies(res, accessToken, rawRefreshToken);
 
       return res.json({
-        accessToken,
-        refreshToken: rawRefreshToken,
         user: {
           id: user.id,
           email: user.email,
@@ -86,10 +115,139 @@ export class AuthController {
     return false;
   }
   
+  // --- HELPER: FINALIZES LOGIN & ISSUES COOKIES / OAUTH REDIRECT ---
+  private static async finalizeLoginSession(
+    req: Request,
+    res: Response,
+    workspaces: any[],
+    activeWorkspaces: any[],
+    targetRecord: any,
+    params: { redirectUri?: string; targetTenantId?: string; clientId?: string }
+  ) {
+    const { redirectUri, targetTenantId, clientId } = params;
+    const oldRefreshToken = req.cookies?.refreshToken || req.body?.oldRefreshToken;
+
+    // Clears the Tenant-Specific security lockout
+    await redisClient.del(`bl:tenant:${targetRecord.tenant_id}:${targetRecord.user_id}`);
+
+    // Multi-Tenant Workspace Selector
+    if (workspaces.length > 1 && !targetTenantId) {
+      const tempToken = CryptoService.generateTempToken({ userId: targetRecord.user_id });
+      return res.json({
+        requiresTenantSelection: true,
+        tempToken,
+        tenants: activeWorkspaces.map(w => ({
+          tenantId: w.tenant_id,
+          companyName: w.company_name,
+          logoUrl: w.logo_url
+        }))
+      });
+    }
+
+    if (oldRefreshToken) {
+      const hashedOldRefresh = CryptoService.hashToken(oldRefreshToken);
+      await QueryService.deleteRefreshTokenByHash(hashedOldRefresh);
+    }
+
+    const accessContext = await QueryService.getUserAccessContext(targetRecord.user_id, targetRecord.tenant_id);
+    const profileData = await QueryService.getUserProfileData(targetRecord.user_id, targetRecord.tenant_id);
+    const tenantContext = await QueryService.getTenantOnboardingContext(targetRecord.tenant_id);
+    
+    const isProfileIncomplete = AuthController.isProfileMissingRequiredFields(tenantContext?.onboarding_schema, profileData);
+    const isProfileEnforced = tenantContext?.enforce_profile_completion || false;
+
+    const accessToken = CryptoService.generateAccessToken({
+      userId: targetRecord.user_id,
+      tenantId: targetRecord.tenant_id,
+      tenantName: targetRecord.company_name,
+      isAdmin: targetRecord.is_tenant_admin,
+      email: targetRecord.email,
+      firstName: targetRecord.first_name,
+      lastName: targetRecord.last_name,
+      status: targetRecord.status,
+      roles: accessContext.roles,
+      entitlements: accessContext.entitlements,
+      isProfileIncomplete,
+      isProfileEnforced
+    });
+
+    const rawRefreshToken = CryptoService.generateRandomToken();
+    const hashedRefresh = CryptoService.hashToken(rawRefreshToken);
+    const expiry = new Date();
+    expiry.setDate(expiry.getDate() + 7);
+
+    await QueryService.saveRefreshToken(
+      targetRecord.user_id, 
+      targetRecord.tenant_id, 
+      hashedRefresh, 
+      expiry, 
+      RequestUtil.getIp(req), 
+      RequestUtil.getAgent(req)
+    );
+    await QueryService.logEvent(
+      targetRecord.tenant_id, 
+      targetRecord.user_id, 
+      'USER_LOGIN', 
+      RequestUtil.getIp(req), 
+      RequestUtil.getAgent(req), 
+      {}
+    );
+
+    const userPayload = {
+      id: targetRecord.user_id,
+      tenantId: targetRecord.tenant_id,
+      tenantName: targetRecord.company_name,
+      email: targetRecord.email,
+      firstName: targetRecord.first_name,
+      lastName: targetRecord.last_name,
+      status: targetRecord.status,
+      isAdmin: targetRecord.is_tenant_admin,
+      roles: accessContext.roles,
+      entitlements: accessContext.entitlements,
+      isProfileIncomplete,
+      isProfileEnforced
+    };
+
+    setAuthCookies(res, accessToken, rawRefreshToken);
+
+    if (redirectUri) {
+      const clientRefreshToken = CryptoService.generateRandomToken();
+      const clientHashedRefresh = CryptoService.hashToken(clientRefreshToken);
+      await QueryService.saveRefreshToken(
+        userPayload.id, 
+        userPayload.tenantId, 
+        clientHashedRefresh, 
+        expiry, 
+        RequestUtil.getIp(req), 
+        RequestUtil.getAgent(req)
+      );
+
+      const authCode = crypto.randomBytes(32).toString('hex');
+      const codePayload = JSON.stringify({ 
+        accessToken, 
+        refreshToken: clientRefreshToken, 
+        user: userPayload, 
+        tenantId: targetRecord.tenant_id 
+      });
+      await redisClient.setEx(`auth_code:${authCode}`, 60, codePayload);
+
+      const finalUrl = new URL(redirectUri);
+      finalUrl.searchParams.append('code', authCode);
+
+      return res.json({ 
+        success: true, 
+        redirectUrl: finalUrl.toString(),
+        user: userPayload 
+      });
+    }
+
+    return res.json({ user: userPayload });
+  }
+  
   // --- THE LOGIN METHOD ---
   static async login(req: Request, res: Response, next: NextFunction) {
     try {
-      const { email, password, redirectUri, targetTenantId, clientId, oldRefreshToken } = req.body;
+      const { email, password, redirectUri, targetTenantId, clientId } = req.body;
 
       if (!email || !password) {
         return res.status(400).json({ error: 'Email and Password are required' });
@@ -126,7 +284,7 @@ export class AuthController {
         return res.status(401).json({ error: `Invalid credentials. ${3 - attempts} attempts remaining.` });
       }
 
-      // Clears the brute-force tracking keys upon successful login
+      // Clears the brute-force tracking keys upon successful password verification
       await redisClient.del(lockoutKey);
       await redisClient.del(`login_attempts:${globalUser.id}`);
 
@@ -172,100 +330,7 @@ export class AuthController {
         }
       }
 
-      // SUPERADMIN FREEZE CHECK
-      const activeWorkspaces = contextualWorkspaces.filter(w => w.tenant_status === 'ACTIVE');
-      if (activeWorkspaces.length === 0) {
-        const tenantNames = contextualWorkspaces.map(w => w.company_name).join(', ');
-        return res.status(403).json({ 
-          error: 'WORKSPACE_FROZEN', 
-          message: contextualWorkspaces.length === 1
-            ? `Your workspace (${tenantNames}) has been suspended.`
-            : `Your associated workspaces (${tenantNames}) have been suspended.`
-        });
-      }
-
-      // HR ADMIN SUSPENSION CHECK
-      const accessibleWorkspaces = activeWorkspaces.filter(w => w.status !== 'SUSPENDED');
-      if (accessibleWorkspaces.length === 0) {
-        return res.status(403).json({ 
-          error: 'USER_SUSPENDED', 
-          message: 'Your access to this workspace has been suspended by your administrator.'
-        });
-      }
-
-      // Proceeds ONLY with the first ACTIVE workspace
-      const targetRecord = accessibleWorkspaces[0];
-
-      // Clears the Tenant-Specific security lockout
-      await redisClient.del(`bl:tenant:${targetRecord.tenant_id}:${targetRecord.user_id}`);
-
-      // ==========================================
-      // 3. MULTI-TENANT RESOLUTION OR FINALIZATION
-      // ==========================================
-      if (workspaces.length > 1 && !targetTenantId) {
-        const tempToken = CryptoService.generateTempToken({ userId: targetRecord.user_id });
-        return res.json({
-          requiresTenantSelection: true,
-          tempToken,
-          tenants: activeWorkspaces.map(w => ({
-            tenantId: w.tenant_id,
-            companyName: w.company_name,
-            logoUrl: w.logo_url
-          }))
-        });
-      }
-
-      const accessContext = await QueryService.getUserAccessContext(targetRecord.user_id, targetRecord.tenant_id);
-
-      if (oldRefreshToken) {
-        const hashedOldRefresh = CryptoService.hashToken(oldRefreshToken);
-        await QueryService.revokeRefreshToken(hashedOldRefresh);
-      }
-
-      const profileData = await QueryService.getUserProfileData(targetRecord.user_id, targetRecord.tenant_id);
-      const tenantContext = await QueryService.getTenantOnboardingContext(targetRecord.tenant_id);
-      
-      const isProfileIncomplete = AuthController.isProfileMissingRequiredFields(tenantContext?.onboarding_schema, profileData);
-      const isProfileEnforced = tenantContext?.enforce_profile_completion || false;
-
-      const accessToken = CryptoService.generateAccessToken({
-        userId: targetRecord.user_id,
-        tenantId: targetRecord.tenant_id,
-        tenantName: targetRecord.company_name,
-        isAdmin: targetRecord.is_tenant_admin,
-        email: targetRecord.email,
-        firstName: targetRecord.first_name,
-        lastName: targetRecord.last_name,
-        status: targetRecord.status,
-        roles: accessContext.roles,
-        entitlements: accessContext.entitlements,
-        isProfileIncomplete,
-        isProfileEnforced
-      });
-
-      const rawRefreshToken = CryptoService.generateRandomToken();
-      const hashedRefresh = CryptoService.hashToken(rawRefreshToken);
-      const expiry = new Date();
-      expiry.setDate(expiry.getDate() + 7);
-
-      await QueryService.saveRefreshToken(targetRecord.user_id, targetRecord.tenant_id, hashedRefresh, expiry, req.ip || '127.0.0.1', req.headers['user-agent'] as string || 'unknown');
-      await QueryService.logEvent(targetRecord.tenant_id, targetRecord.user_id, 'USER_LOGIN', req.ip || '127.0.0.1', req.headers['user-agent'] || 'unknown', {});
-
-      const userPayload = {
-        id: targetRecord.user_id,
-        tenantId: targetRecord.tenant_id,
-        tenantName: targetRecord.company_name,
-        email: targetRecord.email,
-        firstName: targetRecord.first_name,
-        lastName: targetRecord.last_name,
-        status: targetRecord.status,
-        isAdmin: targetRecord.is_tenant_admin,
-        roles: accessContext.roles,
-        entitlements: accessContext.entitlements,
-        isProfileIncomplete,
-        isProfileEnforced
-      };
-
+      // Pre-validate redirectUri BEFORE triggering MFA so untrusted links are blocked immediately
       if (redirectUri) {
         let isValidRedirect = false;
         try {
@@ -291,24 +356,120 @@ export class AuthController {
             message: 'The requested application endpoint is not registered or trusted by your workspace.' 
           });
         }
+      }
 
-        const authCode = crypto.randomBytes(32).toString('hex');
-        const codePayload = JSON.stringify({ accessToken, refreshToken: rawRefreshToken, user: userPayload, tenantId: targetRecord.tenant_id });
-        await redisClient.setEx(`auth_code:${authCode}`, 60, codePayload);
-
-        const finalUrl = new URL(redirectUri);
-        finalUrl.searchParams.append('code', authCode);
-
-        return res.json({ 
-          success: true, 
-          redirectUrl: finalUrl.toString(),
-          accessToken, 
-          refreshToken: rawRefreshToken, 
-          user: userPayload 
+      // SUPERADMIN FREEZE CHECK
+      const activeWorkspaces = contextualWorkspaces.filter(w => w.tenant_status === 'ACTIVE');
+      if (activeWorkspaces.length === 0) {
+        const tenantNames = contextualWorkspaces.map(w => w.company_name).join(', ');
+        return res.status(403).json({ 
+          error: 'WORKSPACE_FROZEN', 
+          message: contextualWorkspaces.length === 1
+            ? `Your workspace (${tenantNames}) has been suspended.`
+            : `Your associated workspaces (${tenantNames}) have been suspended.`
         });
       }
 
-      return res.json({ accessToken, refreshToken: rawRefreshToken, user: userPayload });
+      // HR ADMIN SUSPENSION CHECK
+      const accessibleWorkspaces = activeWorkspaces.filter(w => w.status !== 'SUSPENDED');
+      if (accessibleWorkspaces.length === 0) {
+        return res.status(403).json({ 
+          error: 'USER_SUSPENDED', 
+          message: 'Your access to this workspace has been suspended by your administrator.'
+        });
+      }
+
+      const targetRecord = accessibleWorkspaces[0];
+
+      // ==========================================
+      // 3. NUMBER-MATCH PUSH MFA INTERCEPT
+      // ==========================================
+      const subscriptions = await QueryService.getPushSubscriptions(globalUser.id);
+      if (subscriptions.length > 0) {
+        const attemptId = crypto.randomUUID();
+        const actionToken = crypto.randomBytes(32).toString('hex');
+
+        // Generate 4 unique 2-digit numbers (10-99)
+        const numSet = new Set<string>();
+        while (numSet.size < 4) {
+          numSet.add(crypto.randomInt(10, 100).toString());
+        }
+        const allFourOptions = Array.from(numSet);
+        const challengeCode = allFourOptions[0];
+
+        // 3 shuffled options for Native OS Banner; 4 shuffled options for In-App Modal
+        const bannerOptions = [challengeCode, allFourOptions[1], allFourOptions[2]].sort(() => Math.random() - 0.5);
+        const modalOptions = [...allFourOptions].sort(() => Math.random() - 0.5);
+
+        const clientIp = RequestUtil.getIp(req);
+        const deviceMeta = RequestUtil.getDevice(req);
+        const locationMeta = RequestUtil.getLocation(clientIp);
+        const resolveUrl = `${req.protocol}://${req.get('host')}/api/v1/auth/mfa/resolve`;
+
+        const pushResult = await PushService.sendToUser(globalUser.id, {
+          type: 'MFA_CHALLENGE',
+          title: '🔐 Sign-In Verification Request',
+          body: `${deviceMeta.displayName} near ${locationMeta.displayLocation} (${clientIp}). Tap the number shown on your login screen.`,
+          tag: `mfa-${attemptId}`,
+          vibrate: [300, 100, 300, 100, 300],
+          url: `/app?mfaAttempt=${attemptId}`,
+          actions: bannerOptions.map(num => ({
+            action: `mfa_pick_${num}`,
+            title: `Approve: ${num}`
+          })),
+          mfa: {
+            attemptId,
+            actionToken,
+            resolveUrl,
+            options: modalOptions,
+            device: deviceMeta.displayName,
+            location: locationMeta.displayLocation,
+            ip: clientIp
+          }
+        });
+
+        // Only pause on the MFA Hold screen if at least 1 live device received the push!
+        // (If the user uninstalled the PWA, PushService auto-prunes the dead rows and returns deliveredCount === 0)
+        if (pushResult.deliveredCount > 0) {
+          const mfaVaultPayload = {
+            attemptId,
+            userId: globalUser.id,
+            tenantId: targetRecord.tenant_id,
+            email: globalUser.email,
+            challengeCode,
+            options: modalOptions,
+            actionToken,
+            status: 'PENDING',
+            device: deviceMeta.displayName,
+            location: locationMeta.displayLocation,
+            ip: clientIp,
+            loginParams: { redirectUri, targetTenantId, clientId },
+            createdAt: Date.now()
+          };
+
+          await redisClient.setEx(`mfa:attempt:${attemptId}`, 180, JSON.stringify(mfaVaultPayload));
+          await redisClient.setEx(`mfa:user_active:${globalUser.id}`, 180, attemptId);
+
+          return res.status(202).json({
+            requiresMfa: true,
+            attemptId,
+            challengeCode,
+            expiresIn: 180
+          });
+        }
+      }
+
+      // ==========================================
+      // 4. NO ACTIVE PUSH DEVICES -> FINALIZE IMMEDIATELY
+      // ==========================================
+      return await AuthController.finalizeLoginSession(
+        req,
+        res,
+        workspaces,
+        activeWorkspaces,
+        targetRecord,
+        { redirectUri, targetTenantId, clientId }
+      );
     } catch (err) {
       next(err);
     }
@@ -317,7 +478,8 @@ export class AuthController {
   // --- THE NEW SELECT WORKSPACE METHOD ---
   static async selectWorkspace(req: Request, res: Response, next: NextFunction) {
     try {
-      const { tempToken, tenantId, oldRefreshToken, redirectUri, clientId } = req.body;
+      const { tempToken, tenantId, redirectUri, clientId } = req.body;
+      const oldRefreshToken = req.cookies?.refreshToken || req.body.oldRefreshToken;
 
       if (!tempToken || !tenantId) {
         return res.status(400).json({ error: 'Token and Workspace ID are required' });
@@ -349,7 +511,7 @@ export class AuthController {
       // Kills the old session if they are switching workspaces ---
       if (oldRefreshToken) {
         const hashedOldRefresh = CryptoService.hashToken(oldRefreshToken);
-        await QueryService.revokeRefreshToken(hashedOldRefresh);
+        await QueryService.deleteRefreshTokenByHash(hashedOldRefresh);
       }
 
       // --- THE ENTERPRISE CONTEXT AGGREGATION ---
@@ -386,8 +548,8 @@ export class AuthController {
       const expiry = new Date();
       expiry.setDate(expiry.getDate() + 7);
 
-      await QueryService.saveRefreshToken(user.id, user.tenant_id, hashedRefresh, expiry, req.ip || '127.0.0.1', req.headers['user-agent'] as string || 'unknown');
-      await QueryService.logEvent(user.tenant_id, user.id, 'USER_LOGIN', req.ip || '127.0.0.1', req.headers['user-agent'] || 'unknown', {});
+      await QueryService.saveRefreshToken(user.id, user.tenant_id, hashedRefresh, expiry, RequestUtil.getIp(req), RequestUtil.getAgent(req));
+      await QueryService.logEvent(user.tenant_id, user.id, 'USER_LOGIN', RequestUtil.getIp(req), RequestUtil.getAgent(req), {});
 
       const userPayload = {
         id: user.id, 
@@ -403,6 +565,8 @@ export class AuthController {
         isProfileIncomplete,
         isProfileEnforced
       };
+
+      setAuthCookies(res, accessToken, rawRefreshToken);
 
       // --- THE AUTHORIZATION CODE REDIRECT FLOW ---
       if (redirectUri) {
@@ -443,8 +607,25 @@ export class AuthController {
             message: 'The requested application endpoint is not registered or trusted by your workspace. For your protection, this login attempt has been blocked.' 
           });
         }
+
+        const clientRefreshToken = CryptoService.generateRandomToken();
+        const clientHashedRefresh = CryptoService.hashToken(clientRefreshToken);
+        await QueryService.saveRefreshToken(
+          userPayload.id, 
+          userPayload.tenantId, 
+          clientHashedRefresh, 
+          expiry, 
+          RequestUtil.getIp(req), 
+          RequestUtil.getAgent(req)
+        );
+
         const authCode = crypto.randomBytes(32).toString('hex');
-        const codePayload = JSON.stringify({ accessToken, refreshToken: rawRefreshToken, user: userPayload, tenantId: user.tenant_id });
+        const codePayload = JSON.stringify({ 
+          accessToken, 
+          refreshToken: clientRefreshToken, 
+          user: userPayload, 
+          tenantId: user.tenant_id 
+        });
         await redisClient.setEx(`auth_code:${authCode}`, 60, codePayload);
 
         const finalUrl = new URL(redirectUri);
@@ -453,13 +634,11 @@ export class AuthController {
         return res.json({ 
           success: true, 
           redirectUrl: finalUrl.toString(),
-          accessToken, 
-          refreshToken: rawRefreshToken, 
           user: userPayload 
         });
       }
 
-      return res.json({ accessToken, refreshToken: rawRefreshToken, user: userPayload });
+      return res.json({ user: userPayload });
     } catch (err) {
       next(err);
     }
@@ -508,6 +687,233 @@ export class AuthController {
         tempToken,
         tenants: maskedTenants
       });
+    } catch (err) {
+      next(err);
+    }
+  }
+  
+  // ==========================================
+  // NUMBER-MATCH MFA ENDPOINTS
+  // ==========================================
+
+  // 1. Frontend Login Screen Polls This Every 2 Seconds
+  static async getMfaStatus(req: Request, res: Response, next: NextFunction) {
+    try {
+      const attemptId = req.params.attemptId as string;
+      const raw = await redisClient.get(`mfa:attempt:${attemptId}`);
+
+      if (!raw) {
+        return res.status(404).json({ status: 'EXPIRED', error: 'Verification challenge expired. Please sign in again.' });
+      }
+
+      const attempt = JSON.parse(raw);
+
+      if (attempt.status === 'PENDING') {
+        return res.json({ status: 'PENDING' });
+      }
+
+      if (attempt.status === 'DENIED') {
+        await redisClient.del(`mfa:attempt:${attemptId}`);
+        return res.status(403).json({
+          status: 'DENIED',
+          error: 'Compromised login attempt blocked: This sign-in was explicitly denied from your registered device.'
+        });
+      }
+
+      if (attempt.status === 'APPROVED') {
+        await redisClient.del(`mfa:attempt:${attemptId}`);
+
+        let workspaces = await QueryService.getTenantsByEmail(attempt.email);
+        const { redirectUri, targetTenantId, clientId } = attempt.loginParams || {};
+
+        if (clientId) {
+          const allocatedTenantIds = await QueryService.getAllocatedTenantsForClient(clientId);
+          workspaces = workspaces.filter(w => allocatedTenantIds.includes(w.tenant_id));
+        }
+        const contextualWorkspaces = targetTenantId
+          ? workspaces.filter(w => w.tenant_id === targetTenantId)
+          : workspaces;
+        const activeWorkspaces = contextualWorkspaces.filter(w => w.tenant_status === 'ACTIVE');
+        const accessibleWorkspaces = activeWorkspaces.filter(w => w.status !== 'SUSPENDED');
+        const targetRecord = accessibleWorkspaces[0];
+
+        return await AuthController.finalizeLoginSession(
+          req, res, workspaces, activeWorkspaces, targetRecord,
+          { redirectUri, targetTenantId, clientId }
+        );
+      }
+
+      return res.json({ status: 'PENDING' });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  // 2. Existing Logged-In PWA Checks for Active Challenge (For In-App Security Modal)
+  static async getActiveMfaChallenge(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      const userId = req.user?.userId;
+      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+      const attemptId = await redisClient.get(`mfa:user_active:${userId}`);
+      if (!attemptId) return res.json({ activeChallenge: null });
+
+      const raw = await redisClient.get(`mfa:attempt:${attemptId}`);
+      if (!raw) return res.json({ activeChallenge: null });
+
+      const attempt = JSON.parse(raw);
+      if (attempt.status !== 'PENDING') return res.json({ activeChallenge: null });
+
+      return res.json({
+        activeChallenge: {
+          attemptId: attempt.attemptId,
+          options: attempt.options,
+          device: attempt.device,
+          location: attempt.location,
+          ip: attempt.ip,
+          createdAt: attempt.createdAt
+        }
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  // 3. Resolves Challenge (Called by Service Worker Action Buttons OR In-App Modal)
+  static async resolveMfaChallenge(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { attemptId, actionToken, selectedCode, decision } = req.body;
+      if (!attemptId) return res.status(400).json({ error: 'Attempt ID required' });
+
+      const raw = await redisClient.get(`mfa:attempt:${attemptId}`);
+      if (!raw) return res.status(404).json({ error: 'Challenge expired or already resolved.' });
+
+      const attempt = JSON.parse(raw);
+      if (attempt.status !== 'PENDING') {
+        return res.json({ success: true, message: 'Already resolved.' });
+      }
+
+      // Authenticate caller: Either valid Service Worker actionToken OR valid logged-in session cookie
+      let isAuthorized = false;
+      if (actionToken && actionToken === attempt.actionToken) {
+        isAuthorized = true;
+      } else if (req.cookies?.accessToken) {
+        const decoded = CryptoService.verifyAccessToken(req.cookies.accessToken);
+        if (decoded && decoded.userId === attempt.userId) {
+          isAuthorized = true;
+        }
+      }
+
+      if (!isAuthorized) {
+        return res.status(401).json({ error: 'Unauthorized MFA resolution attempt.' });
+      }
+
+      const isApproved = decision !== 'DENY' && String(selectedCode) === String(attempt.challengeCode);
+      attempt.status = isApproved ? 'APPROVED' : 'DENIED';
+
+      // Save updated status for the polling login screen to pick up
+      await redisClient.setEx(`mfa:attempt:${attemptId}`, 60, JSON.stringify(attempt));
+      await redisClient.del(`mfa:user_active:${attempt.userId}`);
+
+      if (!isApproved) {
+        await QueryService.logEvent(
+          attempt.tenantId,
+          attempt.userId,
+          'MFA_CHALLENGE_DENIED',
+          attempt.ip,
+          attempt.device,
+          { selectedCode, decision, location: attempt.location }
+        );
+      }
+
+      // Broadcast Silent Ghosting Push to clear the notification & modal across ALL other devices
+      await PushService.sendToUser(attempt.userId, {
+        type: 'MFA_RESOLVED',
+        title: '',
+        body: '',
+        tag: `mfa-${attemptId}`,
+        mfa: {
+          attemptId,
+          actionToken: '',
+          resolveUrl: '',
+          options: [],
+          device: '',
+          location: '',
+          ip: ''
+        }
+      });
+
+      return res.json({
+        success: true,
+        status: attempt.status,
+        message: isApproved ? 'Login approved.' : 'Login attempt denied and blocked.'
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  // 4. Fallback: Send Email OTP if User Cannot Access Their Registered Device
+  static async sendMfaEmailFallback(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { attemptId } = req.body;
+      const raw = await redisClient.get(`mfa:attempt:${attemptId}`);
+      if (!raw) return res.status(404).json({ error: 'Challenge expired. Please sign in again.' });
+
+      const attempt = JSON.parse(raw);
+      const emailOtp = crypto.randomInt(100000, 999999).toString();
+      attempt.fallbackOtp = emailOtp;
+
+      await redisClient.setEx(`mfa:attempt:${attemptId}`, 180, JSON.stringify(attempt));
+      await EmailService.sendOtpEmail(attempt.email, emailOtp);
+
+      return res.json({ success: true, message: 'Verification code sent to your email.' });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  // 5. Fallback: Verify Email OTP & Immediately Finalize Session
+  static async verifyMfaEmailFallback(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { attemptId, otp } = req.body;
+      const raw = await redisClient.get(`mfa:attempt:${attemptId}`);
+      if (!raw) return res.status(404).json({ error: 'Challenge expired. Please sign in again.' });
+
+      const attempt = JSON.parse(raw);
+      if (!attempt.fallbackOtp || String(attempt.fallbackOtp) !== String(otp).trim()) {
+        return res.status(400).json({ error: 'Invalid verification code.' });
+      }
+
+      // Consume the MFA attempt & clear notifications on other devices
+      await redisClient.del(`mfa:attempt:${attemptId}`);
+      await redisClient.del(`mfa:user_active:${attempt.userId}`);
+
+      await PushService.sendToUser(attempt.userId, {
+        type: 'MFA_RESOLVED',
+        title: '',
+        body: '',
+        tag: `mfa-${attemptId}`
+      });
+
+      let workspaces = await QueryService.getTenantsByEmail(attempt.email);
+      const { redirectUri, targetTenantId, clientId } = attempt.loginParams || {};
+
+      if (clientId) {
+        const allocatedTenantIds = await QueryService.getAllocatedTenantsForClient(clientId);
+        workspaces = workspaces.filter(w => allocatedTenantIds.includes(w.tenant_id));
+      }
+      const contextualWorkspaces = targetTenantId
+        ? workspaces.filter(w => w.tenant_id === targetTenantId)
+        : workspaces;
+      const activeWorkspaces = contextualWorkspaces.filter(w => w.tenant_status === 'ACTIVE');
+      const accessibleWorkspaces = activeWorkspaces.filter(w => w.status !== 'SUSPENDED');
+      const targetRecord = accessibleWorkspaces[0];
+
+      return await AuthController.finalizeLoginSession(
+        req, res, workspaces, activeWorkspaces, targetRecord,
+        { redirectUri, targetTenantId, clientId }
+      );
     } catch (err) {
       next(err);
     }
@@ -704,8 +1110,8 @@ export class AuthController {
         invite.tenant_id,
         newUser.id,
         'USER_SIGNUP',
-        req.ip || '127.0.0.1',
-        req.headers['user-agent'] || 'unknown',
+        RequestUtil.getIp(req),
+        RequestUtil.getAgent(req),
         { inviteId: invite.id, bypassedWaitingRoom: isAutoActive  }
       );
 
@@ -752,6 +1158,12 @@ export class AuthController {
       if (!email || !otp || !newPassword) {
         return res.status(400).json({ error: 'Email, OTP, and new password are required' });
       }
+
+      // 1. Verify OTP first
+    const isValidOtp = await OtpService.verifyOtp(email, 'EMAIL', otp);
+    if (!isValidOtp) {
+      return res.status(400).json({ error: 'Invalid or expired OTP code.' });
+    }
 
       // Hashes the new password using Argon2
       const passwordHash = await CryptoService.hashPassword(newPassword);
@@ -807,7 +1219,7 @@ export class AuthController {
   // Handle Token Refresh
   static async refreshToken(req: Request, res: Response, next: NextFunction) {
     try {
-      const { refreshToken } = req.body;
+      const refreshToken = req.cookies?.refreshToken || req.body?.refreshToken;
 
       if (!refreshToken) {
         return res.status(401).json({ error: 'Refresh token is required' });
@@ -820,21 +1232,36 @@ export class AuthController {
       const tokenRecord = await QueryService.getRefreshTokenAbsolute(hashedRefresh);
 
       if (!tokenRecord) {
+        clearAuthCookies(res);
         return res.status(401).json({ error: 'Invalid refresh token' });
       }
 
-      // THE OAUTH TOKEN THEFT TRAP
-     if (tokenRecord.is_revoked) {
-        
+      // 1. Resolve current client network coordinates
+      const isSdkRequest = Boolean(req.headers['x-client-id']);
+      const currentIp = RequestUtil.getIp(req);
+      const currentAgent = RequestUtil.getAgent(req);
+      const currentDevice = RequestUtil.getDevice(req);
+      const currentLocation = RequestUtil.getLocation(currentIp);
+
+      // ==========================================
+      // 2. THE OAUTH TOKEN THEFT TRAP
+      // ==========================================
+      if (tokenRecord.is_revoked) {
+        // Check 10-second grace window for concurrent multi-tab or SDK requests
+        const gracePayloadStr = await redisClient.get(`grace:refresh:${hashedRefresh}`);
+        const isSameContext = isSdkRequest || (tokenRecord.ip_address === currentIp && tokenRecord.user_agent === currentAgent);
+
+        if (gracePayloadStr && isSameContext) {
+          const gracePayload = JSON.parse(gracePayloadStr);
+          if (!isSdkRequest && gracePayload.accessToken && gracePayload.refreshToken) {
+            setAuthCookies(res, gracePayload.accessToken, gracePayload.refreshToken);
+          }
+          return res.status(200).json(gracePayload);
+        }
+
         // --- PREVENT CONCURRENCY SPAM (Refresh Storm Lock) ---
         const theftLockKey = `lock:token_theft:${hashedRefresh}`;
-
-        // 'NX' ensures it only sets the key if it DOES NOT exist. 
-        // Returns 'OK' if successful, or null if another request beat it by a microsecond.
-        const acquiredLock = await redisClient.set(theftLockKey, 'locked', {
-          NX: true,
-          EX: 60
-        });
+        const acquiredLock = await redisClient.set(theftLockKey, 'locked', { NX: true, EX: 60 });
 
         if (acquiredLock === 'OK') {
           console.warn(`[SECURITY] Token Replay Detected! NUKING SESSIONS FOR USER: ${tokenRecord.user_id}`);
@@ -842,15 +1269,36 @@ export class AuthController {
           // 1. Nuke ALL database sessions globally
           await QueryService.revokeAllUserTokensGlobally(tokenRecord.user_id);
           
-          // 2. Audit Logging & Webhook Dispatch
+          // 2. Retrieve email for alerting
+          const userEmail = await QueryService.getUserEmailById(tokenRecord.user_id);
+          if (userEmail) {
+            // Push Notification
+            await PushService.sendToUser(tokenRecord.user_id, {
+              title: '🚨 Session Compromised',
+              body: `Token reuse detected from ${currentDevice.displayName}. All sessions have been terminated.`,
+              tag: 'security-compromise',
+              vibrate: [500, 200, 500, 200, 500],
+              url: '/login'
+            });
+
+            // Email Notification with Exact Location and Device
+            await EmailService.sendTokenTheftAlertEmail(
+              userEmail,
+              currentIp,
+              currentDevice.displayName,
+              currentLocation.displayLocation
+            );
+          }
+
+          // 3. Audit Logging & Webhook Dispatch
           if (tokenRecord.tenant_id) {
             await QueryService.logEvent(
               tokenRecord.tenant_id, 
               tokenRecord.user_id, 
               'TOKEN_THEFT_DETECTED', 
-              req.ip || '127.0.0.1', 
-              req.headers['user-agent'] || 'unknown', 
-              {}
+              currentIp, 
+              currentAgent, 
+              { device: currentDevice.displayName, location: currentLocation.displayLocation }
             );
             
             await EventDispatcherService.dispatch(tokenRecord.tenant_id, 'user.session.revoked', {
@@ -858,10 +1306,11 @@ export class AuthController {
               reason: 'token_theft_detected'
             }, 1);
           } else {
-            await QueryService.logSuperAdminEvent(tokenRecord.user_id, 'TOKEN_THEFT_DETECTED', req.ip || '127.0.0.1');
+            await QueryService.logSuperAdminEvent(tokenRecord.user_id, 'TOKEN_THEFT_DETECTED', currentIp);
           }
         }
 
+        clearAuthCookies(res);
         return res.status(401).json({ 
           error: 'Compromised session detected. All your active sessions have been terminated for your protection. Please log in again.' 
         });
@@ -869,8 +1318,82 @@ export class AuthController {
 
       // Manually verify the token hasn't expired yet
       if (new Date(tokenRecord.expires_at) < new Date()) {
+        await QueryService.deleteRefreshTokenByHash(hashedRefresh);
+        clearAuthCookies(res);
         return res.status(401).json({ error: 'Refresh token has expired' });
       }
+
+      // ==========================================
+      // 3. DEVICE & GEO-IP ANOMALY DETECTION
+      // ==========================================
+      if(!isSdkRequest) {
+        // A. Strict User-Agent Binding
+        if (tokenRecord.user_agent !== currentAgent) {
+          console.warn(`[SECURITY] User-Agent mismatch for user ${tokenRecord.user_id}.`);
+          await QueryService.deleteRefreshTokenByHash(hashedRefresh);
+          clearAuthCookies(res);
+          return res.status(401).json({ error: 'Session context mismatch. Please log in again.' });
+        }
+
+        // B. Geo-IP Anomaly Detection
+        if (tokenRecord.ip_address !== currentIp) {
+          const originalLocation = RequestUtil.getLocation(tokenRecord.ip_address);
+          
+          // If either IP can't be resolved properly (e.g. internal network), we skip the strict check
+          if (
+            originalLocation.country !== 'Unknown' && 
+            originalLocation.country !== 'Dev Network' &&
+            currentLocation.country !== 'Unknown' && 
+            currentLocation.country !== 'Dev Network'
+          ) {
+            // If the country completely changed during a single session, assume theft!
+            if (originalLocation.country !== currentLocation.country) {
+              console.warn(`[SECURITY] Geo-IP anomaly detected! Original: ${originalLocation.country}, Current: ${currentLocation.country}`);
+              
+              // 1. Burn the compromised token
+              await QueryService.deleteRefreshTokenByHash(hashedRefresh);
+              clearAuthCookies(res);
+              
+              // 2. Fetch the user's email to notify them
+              const userEmail = await QueryService.getUserEmailById(tokenRecord.user_id);
+              if (userEmail) {
+                await PushService.sendToUser(tokenRecord.user_id, {
+                  title: '🚨 Critical Security Alert',
+                  body: `Suspicious login from ${currentLocation.displayLocation} on ${currentDevice.displayName}. Session terminated.`,
+                  tag: 'security-alert',
+                  vibrate: [500, 200, 500, 200, 500],
+                  url: '/login',
+                  actions: [{ action: 'reset_pwd', title: 'Reset Password' }],
+                  actionUrls: { 'reset_pwd': '/forgot-password' }
+                });
+
+                await EmailService.sendSuspiciousActivityEmail(
+                  userEmail, 
+                  currentLocation.displayLocation, 
+                  currentIp, 
+                  currentDevice.displayName
+                );
+              }
+
+              // 3. Reject the request
+              return res.status(401).json({ 
+                error: 'Suspicious login location detected. Your session has been terminated for your protection. Please check your email and log in again.' 
+              });
+            }
+          }
+        }
+      }  
+
+      // --- REFRESH TOKEN ROTATION ---
+
+      // Generate the replacement token
+      const newRawRefreshToken = CryptoService.generateRandomToken();
+      const newHashedRefresh = CryptoService.hashToken(newRawRefreshToken);
+      const newExpiry = new Date();
+      newExpiry.setDate(newExpiry.getDate() + 7);
+
+      const ipToSave = isSdkRequest ? tokenRecord.ip_address : currentIp;
+      const agentToSave = isSdkRequest ? tokenRecord.user_agent : currentAgent;
 
       // ==========================================
       // BRANCH 1: SUPERADMIN REFRESH FLOW
@@ -880,6 +1403,8 @@ export class AuthController {
 
         // Ensures they still have SuperAdmin clearance and haven't been blacklisted
         if (!user || !user.is_superadmin || user.is_blacklisted) {
+          await QueryService.deleteRefreshTokenByHash(hashedRefresh);
+          clearAuthCookies(res);
           return res.status(403).json({ error: 'SuperAdmin account invalid or blacklisted' });
         }
 
@@ -890,7 +1415,20 @@ export class AuthController {
           isAdmin: true,
         });
 
-        return res.json({ accessToken: newAccessToken });
+        const superAdminResponse = {
+          success: true,
+          accessToken: newAccessToken,
+          refreshToken: newRawRefreshToken
+        };
+
+        // Inside refreshToken, right before await QueryService.revokeRefreshToken(hashedRefresh):
+        await redisClient.setEx(`grace:refresh:${hashedRefresh}`, 10, JSON.stringify(superAdminResponse));
+        await QueryService.revokeRefreshToken(hashedRefresh);
+        await QueryService.saveRefreshToken(user.id, 'SYSTEM', newHashedRefresh, newExpiry, RequestUtil.getIp(req), RequestUtil.getAgent(req));
+        
+        setAuthCookies(res, newAccessToken, newRawRefreshToken);
+
+        return res.json({ success: true, accessToken: newAccessToken, refreshToken: newRawRefreshToken });
       }
 
       // ==========================================
@@ -901,20 +1439,18 @@ export class AuthController {
       const user = await QueryService.getUserByIdAndTenant(tokenRecord.user_id, tokenRecord.tenant_id);
       
       if (!user || user.status === 'SUSPENDED') {
+        await QueryService.deleteRefreshTokenByHash(hashedRefresh);
+        clearAuthCookies(res);
         return res.status(401).json({ error: 'User account is suspended.' });
       }
 
-      // --- THE ENTERPRISE CONTEXT AGGREGATION ---
       const accessContext = await QueryService.getUserAccessContext(user.id, tokenRecord.tenant_id);
-
-      // --- THE PROGRESSIVE PROFILING EVALUATION ---
       const profileData = await QueryService.getUserProfileData(user.id, user.tenant_id);
       const tenantContext = await QueryService.getTenantOnboardingContext(user.tenant_id);
       
       const isProfileIncomplete = AuthController.isProfileMissingRequiredFields(tenantContext?.onboarding_schema, profileData);
       const isProfileEnforced = tenantContext?.enforce_profile_completion || false;
 
-      // Generates a fresh Access Token using your 15m expiration policy
       const newAccessToken = CryptoService.generateAccessToken({
         userId: user.id,
         tenantId: user.tenant_id,
@@ -945,7 +1481,29 @@ export class AuthController {
         isProfileEnforced
       };
 
-      return res.json({ accessToken: newAccessToken, user: userPayload });
+      const workspaceResponse = {
+        accessToken: newAccessToken,
+        refreshToken: newRawRefreshToken,
+        user: userPayload
+      };
+
+      // Cache new tokens in 10s grace key BEFORE revoking old token
+      await redisClient.setEx(`grace:refresh:${hashedRefresh}`, 10, JSON.stringify(workspaceResponse));
+      await QueryService.revokeRefreshToken(hashedRefresh);
+      await QueryService.saveRefreshToken(
+        user.id, 
+        user.tenant_id, 
+        newHashedRefresh, 
+        newExpiry,
+        ipToSave, 
+        agentToSave
+      );
+
+      if (!isSdkRequest) {
+        setAuthCookies(res, newAccessToken, newRawRefreshToken);
+      }
+
+      return res.json(workspaceResponse);
     } catch (err) {
       next(err);
     }
@@ -957,7 +1515,7 @@ export class AuthController {
       // Securely extracts identity from the authenticated session middleware
       const userId = req.user?.userId;
       const tenantId = req.user?.tenantId; 
-      const { appName, currentRefreshToken } = req.body;
+      const { appName } = req.body;
       
       if (!userId || !tenantId || !appName) {
         return res.status(401).json({ error: 'Unauthorized launch request: Session context missing' });
@@ -1007,17 +1565,19 @@ export class AuthController {
         isProfileEnforced
       });
 
-      let rawRefreshToken = currentRefreshToken;
+      const rawRefreshToken = CryptoService.generateRandomToken();
+      const hashedRefresh = CryptoService.hashToken(rawRefreshToken);
+      const expiry = new Date();
+      expiry.setDate(expiry.getDate() + 7);
 
-      if (!rawRefreshToken) {
-      rawRefreshToken = CryptoService.generateRandomToken();
-        const hashedRefresh = CryptoService.hashToken(rawRefreshToken);
-        const expiry = new Date();
-        expiry.setDate(expiry.getDate() + 7);
-
-        await QueryService.saveRefreshToken(userRecord.id, userRecord.tenant_id, hashedRefresh, expiry, req.ip || '127.0.0.1', req.headers['user-agent'] as string || 'unknown');
-      }  
-
+      await QueryService.saveRefreshToken(
+        userRecord.id, 
+        userRecord.tenant_id, 
+        hashedRefresh, expiry, 
+        RequestUtil.getIp(req), 
+        RequestUtil.getAgent(req)
+      );
+      
       const userPayload = {
         id: userRecord.id,
         tenantId: userRecord.tenant_id,
@@ -1119,13 +1679,24 @@ export class AuthController {
       // stays alive, allowing them to continue working seamlessly without being abruptly logged out.
       await QueryService.revokeAllUserTokensInWorkspace(userId, tenantId);
 
+      // Re-issue a fresh Refresh Token for the current device so they stay logged in
+      const newRawRefreshToken = CryptoService.generateRandomToken();
+      const newHashedRefresh = CryptoService.hashToken(newRawRefreshToken);
+      const expiry = new Date();
+      expiry.setDate(expiry.getDate() + 7);
+      await QueryService.saveRefreshToken(userId, tenantId, newHashedRefresh, expiry, RequestUtil.getIp(req), RequestUtil.getAgent(req));
+
+      if (req.cookies?.accessToken) {
+        setAuthCookies(res, req.cookies.accessToken, newRawRefreshToken);
+      }
+
       // Logs the security action
       await QueryService.logEvent(
         tenantId, 
         userId, 
         'PASSWORD_CHANGED', 
-        req.ip || '127.0.0.1', 
-        req.headers['user-agent'] || 'unknown', 
+        RequestUtil.getIp(req), 
+        RequestUtil.getAgent(req), 
         {}
       );
 
@@ -1141,15 +1712,17 @@ export class AuthController {
   // Handle User Logout
   static async logout(req: Request, res: Response, next: NextFunction) {
     try {
-      const { refreshToken } = req.body;
+      const refreshToken = req.cookies?.refreshToken || req.body?.refreshToken;
 
       if (refreshToken) {
         // Hashes the token exactly as it is stored in the database
         const hashedRefresh = CryptoService.hashToken(refreshToken);
         
         // Mark it as revoked so it drops off the Active Sessions UI
-        await QueryService.revokeRefreshToken(hashedRefresh);
+        await QueryService.deleteRefreshTokenByHash(hashedRefresh);
       }
+
+      clearAuthCookies(res);
 
       return res.json({ success: true, message: 'Session terminated successfully' });
     } catch (err) {

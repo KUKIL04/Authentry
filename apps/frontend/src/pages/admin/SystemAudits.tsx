@@ -121,9 +121,13 @@ export default function SystemAudits() {
                             <div className="text-[12px] text-slate-500 mt-1 font-sans font-medium">
                               {(() => {
                                 const parser = new UAParser(log.user_agent);
-                                const browser = parser.getBrowser().name || 'Unknown Browser';
-                                const os = parser.getOS().name || 'Unknown OS';
-                                return `${browser} on ${os}`;
+                                const browser = parser.getBrowser().name;
+                                const os = parser.getOS().name;
+                                if (!browser && !os) {
+                                  return <span className="text-gamboge-600 font-bold">{log.user_agent}</span>;
+                                }
+                                
+                                return `${browser || 'Unknown'} on ${os || 'Unknown'}`;
                               })()}
                             </div>
                           )}

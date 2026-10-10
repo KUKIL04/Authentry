@@ -2,6 +2,7 @@ import { Response, NextFunction } from 'express';
 import { AuthenticatedRequest } from '../middlewares/auth.js';
 import { redisClient } from '../db/redis.js';
 import { PlatformService } from '../services/platform.service.js';
+import { RequestUtil } from '../utils/request.util.js';
 
 export class PlatformController {
   
@@ -26,7 +27,7 @@ export class PlatformController {
   static async flushTelemetry(req: AuthenticatedRequest, res: Response, next: NextFunction) {
     try {
       const actorId = req.user?.userId;
-      const ip = req.ip || '127.0.0.1';
+      const ip = RequestUtil.getIp(req);
       
       if (!actorId) return res.status(401).json({ error: 'Unauthorized' });
 
@@ -52,7 +53,7 @@ export class PlatformController {
       const parsedRank = (tierRank !== undefined && tierRank !== null) ? Number(tierRank) : 10;
 
       const newPlan = await PlatformService.createPlanDefinition(
-        code, name, monthlyPriceUsd || 0, parsedMau, parsedApi, parsedRank, actorId, req.ip || '127.0.0.1'
+        code, name, monthlyPriceUsd || 0, parsedMau, parsedApi, parsedRank, actorId, RequestUtil.getIp(req)
       );
 
       return res.status(201).json({ success: true, plan: newPlan });
@@ -87,7 +88,7 @@ export class PlatformController {
       const parsedApi = (maxApiRequests !== undefined && maxApiRequests !== null && maxApiRequests !== '') ? Number(maxApiRequests) : null;
 
       const updatedPlan = await PlatformService.updatePlanDefinition(
-        planCode, monthlyPriceUsd, parsedMau, parsedApi, actorId, req.ip || '127.0.0.1'
+        planCode, monthlyPriceUsd, parsedMau, parsedApi, actorId, RequestUtil.getIp(req)
       );
 
       if (!updatedPlan) return res.status(404).json({ error: 'Plan not found.' });
@@ -106,7 +107,7 @@ export class PlatformController {
       const featureKey = req.params.featureKey as string;
       const { minPlanCode } = req.body;
       const actorId = req.user?.userId;
-      const ip = req.ip || '127.0.0.1';
+      const ip = RequestUtil.getIp(req);
 
       if (!actorId) return res.status(401).json({ error: 'Unauthorized' });
       if (!minPlanCode) return res.status(400).json({ error: 'Target plan code is required.' });

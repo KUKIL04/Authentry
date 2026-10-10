@@ -21,6 +21,8 @@ import userRouter from './routes/user.js';
 import superadminRouter from './routes/superadmin.js';
 import discoveryRouter from './routes/discovery.js';
 import s2sRouter from './routes/s2s.js';
+import pushRouter from './routes/push.js';
+import cookieParser from 'cookie-parser';
 
 dotenv.config();
 
@@ -28,10 +30,14 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
+// Tells Express to trust the reverse proxy (Vercel, Render, Cloudflare, etc.)
+// and properly populate req.ip and x-forwarded-for with the real client IP.
+app.set('trust proxy', 1);
 app.use(cors({
   origin: true,
   credentials: true
 }));
+app.use(cookieParser());
 app.use(express.json());
 
 app.use(edgeTelemetry);
@@ -49,6 +55,7 @@ app.use('/api/v1/admin', adminRouter);
 app.use('/api/v1/s2s', s2sRouter);
 app.use('/api/v1/platform', superadminRouter);
 app.use('/api/v1/user', userRouter);
+app.use('/api/v1/push', pushRouter);
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', service: 'auth-backend' });

@@ -2,6 +2,7 @@ import { Response, NextFunction } from 'express';
 import { AuthenticatedRequest } from '../middlewares/auth.js';
 import { CryptoService } from '../services/crypto.service.js';
 import { QueryService } from '../services/query.service.js';
+import { RequestUtil } from '../utils/request.util.js';
 
 export class ApiKeyController {
   
@@ -23,7 +24,7 @@ export class ApiKeyController {
       await QueryService.logSuperAdminEvent(
         actorId!, 
         'MODULE_CREDENTIALS_ROTATED', 
-        req.ip || '127.0.0.1', 
+        RequestUtil.getIp(req), 
         { appId }
       );
 

@@ -6,6 +6,7 @@ export const publicAdminClient = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+  withCredentials: true,
 });
 
 export const adminApiClient = axios.create({
@@ -13,19 +14,8 @@ export const adminApiClient = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+  withCredentials: true,
 });
-
-// Request Interceptor: Injects the SuperAdmin JWT
-adminApiClient.interceptors.request.use(
-  (config) => {
-    const token = localStorage.getItem('superadmin_access_token');
-    if (token && config.headers) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-    return config;
-  },
-  (error) => Promise.reject(error)
-);
 
 // Response Interceptor: Silent Refresh Flow & Safe Redirects
 adminApiClient.interceptors.response.use(
@@ -42,18 +32,8 @@ adminApiClient.interceptors.response.use(
       try {
         console.warn('🔄 SuperAdmin token expired. Attempting silent refresh...');
         
-        const refreshToken = localStorage.getItem('superadmin_refresh_token');
-        if (!refreshToken) throw new Error('No refresh token found');
+        await publicAdminClient.post('/auth/refresh');
 
-        // Requests a new access token using the public client
-        const refreshResponse = await publicAdminClient.post('/auth/refresh', { refreshToken });
-
-        // Saves the new access token
-        const newAccessToken = refreshResponse.data.accessToken;
-        localStorage.setItem('superadmin_access_token', newAccessToken);
-
-        // Updates the failed request with the fresh token and replay it
-        originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
         return adminApiClient(originalRequest);
 
       } catch (refreshError) {
@@ -61,9 +41,7 @@ adminApiClient.interceptors.response.use(
         console.error('🔒 SuperAdmin refresh token invalid or expired. Forcing logout.');
         
         // Wipes SuperAdmin state
-        localStorage.removeItem('superadmin_access_token');
-        localStorage.removeItem('superadmin_refresh_token');
-        localStorage.removeItem('superadmin_user');
+        localStorage.removeItem('superadmin_profile');
         
         // Protects public routes from being redirected continuously
         if (currentPath !== '/login') {
@@ -75,9 +53,7 @@ adminApiClient.interceptors.response.use(
 
     // Fallbacks for non-refreshable 401s or 403s (Forbidden/Blacklisted)
     if (!isLoginRequest && (error.response?.status === 401 || error.response?.status === 403)) {
-      localStorage.removeItem('superadmin_access_token');
-      localStorage.removeItem('superadmin_refresh_token');
-      localStorage.removeItem('superadmin_user');
+      localStorage.removeItem('superadmin_profile');
       
       if (currentPath !== '/login') {
         window.location.href = '/login';

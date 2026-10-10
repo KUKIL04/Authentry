@@ -29,33 +29,60 @@ async function runMigrations() {
     await client.connect();
     console.log('⚡ Connected to PostgreSQL for schema migration...');
 
-    // 1. Run base schema
-    const schemaPath = path.join(__dirname, '../db/schema.sql');
-    if (fs.existsSync(schemaPath)) {
-      const sql = fs.readFileSync(schemaPath, 'utf8');
-      await client.query(sql);
-      console.log('✅ Base schema applied successfully.');
-    }
+    // Extract the target file from the command line arguments
+    const targetFile = process.argv[2];
 
-    // 2. Optionally run incremental migration files in order
-    const migrations = [
-      'migration_employee_id.sql',
-      'migration_invitation_upgrade.sql',
-      'migration_suite_taxonomy.sql',
-      'migration_transition.sql',
-      'migration_useragent_ip_refreshtoken.sql'
-    ];
-
-    for (const file of migrations) {
-      const filePath = path.join(__dirname, `../db/${file}`);
-      if (fs.existsSync(filePath)) {
-        const migrationSql = fs.readFileSync(filePath, 'utf8');
-        await client.query(migrationSql);
-        console.log(`✅ Applied migration: ${file}`);
+    if (targetFile) {
+      // ==========================================
+      // TARGETED MODE: Run ONLY the specified file
+      // ==========================================
+      console.log(`🎯 Targeted migration mode: Executing only [${targetFile}]`);
+      const filePath = path.join(__dirname, `../db/${targetFile}`);
+      
+      if (!fs.existsSync(filePath)) {
+        console.error(`❌ Migration file not found: ${filePath}`);
+        process.exit(1);
       }
-    }
+      
+      const migrationSql = fs.readFileSync(filePath, 'utf8');
+      await client.query(migrationSql);
+      console.log(`✅ Successfully applied: ${targetFile}`);
 
-    console.log('🎉 All migrations successfully executed.');
+    } else {
+      // ==========================================
+      // STANDARD MODE: Run everything
+      // ==========================================
+      console.log('📦 Standard migration mode: Running all files...');
+    
+      // 1. Run base schema
+      const schemaPath = path.join(__dirname, '../db/schema.sql');
+      if (fs.existsSync(schemaPath)) {
+        const sql = fs.readFileSync(schemaPath, 'utf8');
+        await client.query(sql);
+        console.log('✅ Base schema applied successfully.');
+      }
+
+      // 2. Optionally run incremental migration files in order
+      const migrations = [
+        'migration_employee_id.sql',
+        'migration_invitation_upgrade.sql',
+        'migration_push_notification.sql',
+        'migration_suite_taxonomy.sql',
+        'migration_transition.sql',
+        'migration_useragent_ip_refreshtoken.sql'
+      ];
+
+      for (const file of migrations) {
+        const filePath = path.join(__dirname, `../db/${file}`);
+        if (fs.existsSync(filePath)) {
+          const migrationSql = fs.readFileSync(filePath, 'utf8');
+          await client.query(migrationSql);
+          console.log(`✅ Applied migration: ${file}`);
+        }
+      }
+    }  
+
+    console.log('🎉 Migration process completed.');
   } catch (err: any) {
     console.error('❌ Migration failed:', err.message);
     process.exit(1);

@@ -8,6 +8,7 @@ import * as AuditQueries from './queries/audit.queries.js';
 import * as WebhookQueries from './queries/webhook.queries.js';
 import * as SuperadminQueries from './queries/superadmin.queries.js';
 import * as EntitlementQueries from './queries/entitlement.queries.js';
+import * as PushQueries from './queries/push.queries.js';
 
 export class QueryService {
   // ==========================================
@@ -55,6 +56,7 @@ export class QueryService {
   static saveRefreshToken = AuthQueries.saveRefreshToken;
   static getRefreshToken = AuthQueries.getRefreshToken;
   static revokeRefreshToken = AuthQueries.revokeRefreshToken;
+  static deleteRefreshTokenByHash = AuthQueries.deleteRefreshTokenByHash;
   static cleanupExpiredTokens = AuthQueries.cleanupExpiredTokens;
   static createInvitation = AuthQueries.createInvitation;
   static getInvitationByHash = AuthQueries.getInvitationByHash;
@@ -87,6 +89,7 @@ export class QueryService {
   static rotateAppCredentials = AppQueries.rotateAppCredentials;
   static getAppCredentials = AppQueries.getAppCredentials;
   static getAllocatedTenantsForClient = AppQueries.getAllocatedTenantsForClient;
+
   // ==========================================
   // RBAC & CONTEXT
   // ==========================================
@@ -106,6 +109,13 @@ export class QueryService {
   static updateSystemRoleTemplate = RbacQueries.updateSystemRoleTemplate;
   static deleteSystemRoleTemplate = RbacQueries.deleteSystemRoleTemplate;
 
+  // ==========================================
+  // PUSH NOTIFICATIONS
+  // ==========================================
+  static savePushSubscription = PushQueries.saveSubscription;
+  static getPushSubscriptions = PushQueries.getSubscriptionsByUser;
+  static deletePushSubscription = PushQueries.deleteSubscription;
+  
   // ==========================================
   // AUDIT LOGS
   // ==========================================

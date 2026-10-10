@@ -26,7 +26,7 @@ export const requireAuth = async (req, res, next) => {
     if (refreshToken) {
       try {
 
-        // ---> FIX: THE HARD BLOCK CHECK <---
+        // ---> THE HARD BLOCK CHECK <---
         // If the SDK tells us this is a local security ban, DO NOT try to refresh.
         if (error.message.includes('revoked locally')) {
           console.log('🛑 Hard block detected in local memory. Instantly terminating session.');
@@ -47,6 +47,14 @@ export const requireAuth = async (req, res, next) => {
           secure: process.env.NODE_ENV === 'production',
           maxAge: 15 * 60 * 1000 
         });
+
+        if (refreshData.refreshToken) {
+          res.cookie('tenant_refresh', refreshData.refreshToken, { 
+            httpOnly: true, 
+            secure: process.env.NODE_ENV === 'production',
+            maxAge: 7 * 24 * 60 * 60 * 1000 
+          });
+        }
 
         // 3. Verify the newly generated token to extract the payload (roles/modules)
         const session = await authentry.auth.verifySession(token);

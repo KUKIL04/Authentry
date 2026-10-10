@@ -28,6 +28,10 @@ export const revokeRefreshToken = async (tokenHash: string) => {
   await pool.query('UPDATE refresh_tokens SET is_revoked = TRUE WHERE token_hash = $1', [tokenHash]);
 };
 
+export const deleteRefreshTokenByHash = async (tokenHash: string) => {
+  await pool.query('DELETE FROM refresh_tokens WHERE token_hash = $1', [tokenHash]);
+};
+
 export const cleanupExpiredTokens = async () => {
   const tokenQuery = `
     DELETE FROM refresh_tokens 
@@ -96,8 +100,7 @@ export const deleteInvitation = async (inviteId: string, tenantId: string) => {
 
 export const revokeAllUserTokensInWorkspace = async (userId: string, tenantId: string) => {
   const query = `
-    UPDATE refresh_tokens 
-    SET is_revoked = TRUE 
+    DELETE FROM refresh_tokens
     WHERE user_id = $1 AND tenant_id = $2;
   `;
   await pool.query(query, [userId, tenantId]);
@@ -117,8 +120,7 @@ export const getActiveSessions = async (tenantId: string) => {
 
 export const revokeSession = async (tenantId: string, tokenId: string) => {
   const res = await pool.query(
-    `UPDATE refresh_tokens 
-     SET is_revoked = TRUE 
+    `DELETE FROM refresh_tokens
      WHERE id = $1 AND tenant_id = $2
      RETURNING *`,
     [tokenId, tenantId]
@@ -137,7 +139,7 @@ export const updateUserPassword = async (email: string, passwordHash: string) =>
 };
 
 export const revokeAllUserTokensGlobally = async (userId: string) => {
-  await pool.query('UPDATE refresh_tokens SET is_revoked = TRUE WHERE user_id = $1', [userId]);
+  await pool.query('DELETE FROM refresh_tokens WHERE user_id = $1', [userId]);
 };
 
 export const getGlobalUserById = async (userId: string) => {
