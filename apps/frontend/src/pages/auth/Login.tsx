@@ -34,7 +34,7 @@ export default function Login() {
   const clientId = searchParams.get('clientId');
   const urlError = searchParams.get('error');
 
-  const [error, setError] = useState(urlError || location.state?.message || '');
+  const [error, setError] = useState('');
 
   // Safely extract the target hostname for the UI
   const targetHost = redirectUri ? (() => {
@@ -42,33 +42,42 @@ export default function Login() {
   })() : '';
 
   useEffect(() => {
-    // Intercept the hard-logout message from the frontend Axios interceptor
+    // 1. Intercept hard-logout suspension state from Axios interceptor
     if (location.state?.message === 'Your access to this workspace has been suspended.') {
       setFrozenMessage(location.state.message);
+      setError(''); // Ensure top banner is hidden
       setStep('USER_SUSPENDED');
-      
-      // Clean up the history state so the error doesn't lock the UI on reload
       window.history.replaceState({}, document.title);
+      return;
     }
-    // Handle URL Errors (from Interceptor Redirects)
+
+    // 2. Handle URL Errors (from Interceptor Redirects)
     if (urlError) {
-      // Smart Routing: If the error contains security keywords from our backend, show the intense UI
-      const isSecurityEvent = urlError.includes('Compromised') || urlError.includes('Suspicious') || urlError.includes('mismatch');
-      
+      const isSecurityEvent =
+        urlError.includes('Compromised') ||
+        urlError.includes('Suspicious') ||
+        urlError.includes('mismatch') ||
+        urlError.includes('denied');
+
+      const isSilentExpiry =
+        urlError.includes('Refresh token is required') ||
+        urlError.includes('Authorization cookie');
+
       if (isSecurityEvent) {
         setSecurityMessage(urlError);
+        setError(''); // Custom TOKEN_THEFT card handles this!
         setStep('TOKEN_THEFT');
-      } else {
-        setError(urlError); // Standard expiration goes to the normal banner
+      } else if (!isSilentExpiry) {
+        setError(urlError); // Only show standard banner for normal messages
       }
 
-      // Clean up the URL so the error doesn't persist if they refresh the page
       searchParams.delete('error');
       setSearchParams(searchParams, { replace: true });
-    } else if (location.state?.message && !frozenMessage) {
+    } else if (location.state?.message) {
       setError(location.state.message);
+      window.history.replaceState({}, document.title);
     }
-  }, [location, urlError, searchParams, setSearchParams, frozenMessage]);
+  }, [location, urlError, searchParams, setSearchParams]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, [e.target.name]: e.target.value });
 
@@ -110,20 +119,23 @@ export default function Login() {
       
       handleLoginSuccess(response);
     } catch (err: any) {
-      if (err.response?.data?.error === 'WORKSPACE_FROZEN') {
-        setFrozenMessage(err.response?.data?.message || 'Your workspace access has been suspended.');
+      const errCode = err.response?.data?.error;
+      const errMsg = err.response?.data?.message;
+
+      if (errCode === 'WORKSPACE_FROZEN') {
+        setFrozenMessage(errMsg || 'Your workspace access has been suspended.');
         setStep('FROZEN');
-      } else if (err.response?.data?.error === 'USER_SUSPENDED') {
-        setFrozenMessage('Your access to this workspace has been suspended.'); 
+      } else if (errCode === 'USER_SUSPENDED') {
+        setFrozenMessage('Your access to this workspace has been suspended.');
         setStep('USER_SUSPENDED');
-      } else if (err.response?.data?.error === 'OAUTH_SECURITY_VIOLATION') {
-        setSecurityMessage(err.response?.data?.message || 'A security violation was detected.');
+      } else if (errCode === 'OAUTH_SECURITY_VIOLATION') {
+        setSecurityMessage(errMsg || 'A security violation was detected.');
         setStep('SECURITY_BLOCK');
-      } else if (err.response?.data?.error === 'ORPHANED_USER') {
-        setFrozenMessage(err.response?.data?.message || 'No associated workspaces found.');
+      } else if (errCode === 'ORPHANED_USER') {
+        setFrozenMessage(errMsg || 'No associated workspaces found.');
         setStep('ORPHANED');
       } else {
-        setError(err.response?.data?.error || 'Invalid credentials');
+        setError(errCode || 'Invalid credentials');
       }
     } finally {
       setIsLoading(false);
@@ -187,7 +199,7 @@ export default function Login() {
             </p>
         </div>
 
-        {error && (
+        {error && (step === 'CREDENTIALS' || step === 'WORKSPACE_SELECT') && (
           <div className="mb-6 bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-2xl text-sm text-center font-semibold animate-in fade-in slide-in-from-top-2">
             {error}
           </div>

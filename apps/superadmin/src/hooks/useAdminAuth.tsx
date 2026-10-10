@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
+import { publicAdminClient } from '../api/client';
 
 interface SuperAdminUser {
   id: string;
@@ -32,13 +33,13 @@ export const AdminAuthProvider = ({ children }: { children: ReactNode }) => {
         if (parsedUser.isSuperAdmin) {
           setUser(parsedUser);
         } else {
-          logout();
+          localStorage.removeItem('superadmin_profile');
+          setUser(null);
         }
       } catch {
-        logout();
+        localStorage.removeItem('superadmin_profile');
+        setUser(null);
       }
-    } else {
-      logout();
     }
     setIsLoading(false);
   }, []);
@@ -51,9 +52,15 @@ export const AdminAuthProvider = ({ children }: { children: ReactNode }) => {
     setUser(userData);
   };
 
-  const logout = () => {
+  const logout = async () => {
+    try {
+      await publicAdminClient.post('/auth/logout', {});
+    } catch {
+      // Ignore network errors during logout cleanup
+    }
     localStorage.removeItem('superadmin_profile');
     setUser(null);
+    window.location.href = '/login';
   };
 
   return (

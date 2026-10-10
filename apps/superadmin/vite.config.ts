@@ -12,6 +12,19 @@ export default defineConfig({
     fs: {
       // Allow serving files from two levels up (the workspace root)
       allow: ['../..']
+    },
+    // Proxies local /api/v1 and /uploads requests from port 4000 to port 3333
+    proxy: {
+      '/api/v1': {
+        target: 'http://localhost:3333',
+        changeOrigin: true,
+        secure: false,
+      },
+      '/uploads': {
+        target: 'http://localhost:3333',
+        changeOrigin: true,
+        secure: false,
+      }
     }
   },
   resolve: {
