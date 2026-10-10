@@ -19,6 +19,13 @@ router.post('/refresh', AuthController.refreshToken);
 router.post('/launch-token', requireAuth, AuthController.issueLaunchCode);
 router.post('/logout', AuthController.logout);
 
+// --- NUMBER-MATCH MFA ROUTES ---
+router.get('/mfa/status/:attemptId', AuthController.getMfaStatus);
+router.get('/mfa/active', requireAuth, AuthController.getActiveMfaChallenge);
+router.post('/mfa/resolve', AuthController.resolveMfaChallenge);
+router.post('/mfa/email-fallback/send', AuthController.sendMfaEmailFallback);
+router.post('/mfa/email-fallback/verify', AuthController.verifyMfaEmailFallback);
+
 // --- Public endpoint for Dynamic OAuth Branding ---
 router.get('/tenant/:tenantId/branding', AuthController.getTenantBranding);
 
