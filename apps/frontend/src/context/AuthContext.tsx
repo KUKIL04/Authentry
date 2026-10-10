@@ -26,7 +26,7 @@ interface AuthContextType {
   tenantSettings: TenantSettings | null; 
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (accessToken: string, refreshToken: string, userData: User) => void;
+  login: (userData: User) => void;
   logout: () => void;
   refreshBranding: () => Promise<void>; 
   updateUserContext: (updates: Partial<User>) => void;
@@ -96,11 +96,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   useEffect(() => {
     const initializeAuth = () => {
-      const storedToken = localStorage.getItem('accessToken');
       const storedUser = localStorage.getItem('user');
       const storedSettings = localStorage.getItem('tenantSettings');
 
-      if (storedToken && storedUser) {
+      if (storedUser) {
         try {
           setUser(JSON.parse(storedUser));
           if (storedSettings) {
@@ -110,8 +109,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           }
           fetchAndApplyBranding();
         } catch (error) {
-          localStorage.removeItem('accessToken');
-          localStorage.removeItem('refreshToken');
           localStorage.removeItem('user');
           localStorage.removeItem('tenantSettings');
         }
@@ -122,9 +119,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     initializeAuth();
   }, []);
 
-  const login = (accessToken: string, refreshToken: string, userData: User) => {
-    localStorage.setItem('accessToken', accessToken);
-    localStorage.setItem('refreshToken', refreshToken); 
+  const login = (userData: User) => {
     localStorage.setItem('user', JSON.stringify(userData));
     setUser(userData);
     
@@ -133,12 +128,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const logout = async () => {
-    const refreshToken = localStorage.getItem('refreshToken');
-    if (refreshToken) {
-      try { await AuthAPI.logout(refreshToken); } catch (err) {}
-    }
-    localStorage.removeItem('accessToken');
-    localStorage.removeItem('refreshToken'); 
+    try { await AuthAPI.logout(); } catch (err) {}
     localStorage.removeItem('user');
     localStorage.removeItem('tenantSettings');
     setUser(null);

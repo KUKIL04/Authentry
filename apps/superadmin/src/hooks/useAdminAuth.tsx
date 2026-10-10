@@ -12,7 +12,7 @@ interface AuthContextType {
   user: SuperAdminUser | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (accessToken: string, refreshToken: string, userData: SuperAdminUser) => void;
+  login: (userData: SuperAdminUser) => void;
   logout: () => void;
 }
 
@@ -24,11 +24,9 @@ export const AdminAuthProvider = ({ children }: { children: ReactNode }) => {
 
   useEffect(() => {
     // Hydrates session on mount
-    const token = localStorage.getItem('superadmin_access_token');
-    const refreshToken = localStorage.getItem('superadmin_refresh_token');
     const storedUser = localStorage.getItem('superadmin_profile');
 
-    if (token && refreshToken && storedUser) {
+    if (storedUser) {
       try {
         const parsedUser = JSON.parse(storedUser);
         if (parsedUser.isSuperAdmin) {
@@ -45,20 +43,15 @@ export const AdminAuthProvider = ({ children }: { children: ReactNode }) => {
     setIsLoading(false);
   }, []);
 
-  const login = (accessToken: string, refreshToken: string, userData: SuperAdminUser) => {
+  const login = (userData: SuperAdminUser) => {
     if (!userData.isSuperAdmin) {
       throw new Error("Access Denied: SuperAdmin clearance required.");
     }
-    // Stores both tokens and profile credentials cleanly
-    localStorage.setItem('superadmin_access_token', accessToken);
-    localStorage.setItem('superadmin_refresh_token', refreshToken);
     localStorage.setItem('superadmin_profile', JSON.stringify(userData));
     setUser(userData);
   };
 
   const logout = () => {
-    localStorage.removeItem('superadmin_access_token');
-    localStorage.removeItem('superadmin_refresh_token');
     localStorage.removeItem('superadmin_profile');
     setUser(null);
   };

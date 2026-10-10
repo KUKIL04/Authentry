@@ -3,17 +3,21 @@ import { publicClient, apiClient } from './client';
 export const AuthAPI = {
   // Initial authentication
   login: async (email: string, password: string, redirectUri?: string, targetTenantId?: string, clientId?: string) => {
-    const oldRefreshToken = localStorage.getItem('refreshToken') || undefined;
-    const response = await publicClient.post('/auth/login', { email, password, redirectUri, targetTenantId, clientId, oldRefreshToken });
+    const response = await publicClient.post('/auth/login', { 
+      email, 
+      password, 
+      redirectUri, 
+      targetTenantId, 
+      clientId 
+    });
     return response.data;
   },
 
   // Workspace resolution (if user belongs to multiple)
-  selectWorkspace: async (tempToken: string, tenantId: string, oldRefreshToken?: string, redirectUri?: string, clientId?: string) => {
+  selectWorkspace: async (tempToken: string, tenantId: string, redirectUri?: string, clientId?: string) => {
     const response = await publicClient.post('/auth/select-workspace', { 
       tempToken, 
       tenantId, 
-      oldRefreshToken,
       redirectUri,
       clientId
     });
@@ -57,9 +61,9 @@ export const AuthAPI = {
     return response.data;
   },
   
-  changePassword: async (currentPassword: string, newPassword: string) => {
+  changePassword: async (povToken: string, newPassword: string) => {
     // We are using apiClient here to automatically attach the Bearer token!
-    const response = await apiClient.post('/auth/change-password', { currentPassword, newPassword });
+    const response = await apiClient.post('/auth/change-password', { povToken, newPassword });
     return response.data;
   },
 
@@ -78,19 +82,44 @@ export const AuthAPI = {
     return response.data;
   },
 
-  refreshToken: async (refreshToken: string) => {
-    const response = await publicClient.post('/auth/refresh', { refreshToken });
+  refreshToken: async () => {
+    const response = await publicClient.post('/auth/refresh');
     return response.data;
   },
 
   requestLaunchCode: async (appName: string) => {
-    const currentRefreshToken = localStorage.getItem('refreshToken') || undefined;
-    const response = await apiClient.post('/auth/launch-token', { appName, currentRefreshToken });
+    const response = await apiClient.post('/auth/launch-token', { appName });
     return response.data;
   },
 
-  logout: async (refreshToken: string) => {
-    const response = await publicClient.post('/auth/logout', { refreshToken });
+  logout: async () => {
+    const response = await publicClient.post('/auth/logout', { });
+    return response.data;
+  },
+
+  // --- NUMBER-MATCH MFA METHODS ---
+  getMfaStatus: async (attemptId: string) => {
+    const response = await publicClient.get(`/auth/mfa/status/${attemptId}`);
+    return response.data;
+  },
+
+  getActiveMfaChallenge: async () => {
+    const response = await apiClient.get('/auth/mfa/active');
+    return response.data;
+  },
+
+  resolveMfaChallenge: async (attemptId: string, selectedCode?: string, decision: 'NUMBER_PICK' | 'DENY' = 'NUMBER_PICK') => {
+    const response = await apiClient.post('/auth/mfa/resolve', { attemptId, selectedCode, decision });
+    return response.data;
+  },
+
+  sendMfaEmailFallback: async (attemptId: string) => {
+    const response = await publicClient.post('/auth/mfa/email-fallback/send', { attemptId });
+    return response.data;
+  },
+
+  verifyMfaEmailFallback: async (attemptId: string, otp: string) => {
+    const response = await publicClient.post('/auth/mfa/email-fallback/verify', { attemptId, otp });
     return response.data;
   },
 };

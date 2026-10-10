@@ -2,14 +2,18 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../hooks/useAuth';
 import { AuthAPI } from '../../api/auth.api';
 import { UserAPI } from '../../api/user.api';
-import { LogOut, User, ShieldCheck, RefreshCw, ArrowRightLeft, Building2, X, Ban, Rocket, ExternalLink, AlertCircle, KeyRound, ChevronDown, Loader2, CheckCircle2, ShieldMinus, UserCircle, Phone, Globe, ArrowRight } from 'lucide-react';
+import { LogOut, User, ShieldCheck, RefreshCw, ArrowRightLeft, Building2, X, Ban, Rocket, ExternalLink, AlertCircle, KeyRound, ChevronDown, Loader2, CheckCircle2, ShieldMinus, UserCircle, Phone, Globe, ArrowRight, ShieldAlert, Bell } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { InputField } from '../../components/ui/InputField';
 import { OtpActionInput } from '../../components/ui/OtpActionInput';
+import { MfaSecurityModal } from '../../components/security/MfaSecurityModal';
+import { usePushNotifications } from '../../hooks/usePushNotifications';
 
 export default function ModuleApp() {
   const { user, login, logout, tenantSettings } = useAuth();
   const navigate = useNavigate();
+
+  const { isSupported, isSubscribed, subscribeToPush } = usePushNotifications();
 
   // --- Switch Workspace State ---
   const [isSwitchModalOpen, setIsSwitchModalOpen] = useState(false);
@@ -171,11 +175,9 @@ export default function ModuleApp() {
     try {
       const res = await UserAPI.updatePlatformProfile(platformForm);
       setInitialPlatformForm(platformForm);
-
-      const currentRefresh = localStorage.getItem('refreshToken') || '';
       
       if (res.user) {
-        login(res.accessToken, currentRefresh, res.user);
+        login(res.user);
       }
 
       setProfileState({ isLoading: false, error: '', success: true });
@@ -194,11 +196,9 @@ export default function ModuleApp() {
     try {
       const res = await UserAPI.completeProfile(customProfileData);
       setInitialCustomData(customProfileData);
-
-      const currentRefresh = localStorage.getItem('refreshToken') || '';
       
       if (res.user) {
-        login(res.accessToken, currentRefresh, res.user);
+        login(res.user);
       }
       
       setProfileState({ isLoading: false, error: '', success: true });
@@ -229,10 +229,9 @@ export default function ModuleApp() {
     if (!switchTempToken) return;
     setIsSwitching(true);
     try {
-      const oldRefreshToken = localStorage.getItem('refreshToken') || undefined;
-      const response = await AuthAPI.selectWorkspace(switchTempToken, tenantId, oldRefreshToken);
+      const response = await AuthAPI.selectWorkspace(switchTempToken, tenantId);
         
-      login(response.accessToken, response.refreshToken, response.user);
+      login(response.user);
       setIsSwitchModalOpen(false);
       window.location.reload(); 
     } catch (error) {
@@ -259,14 +258,11 @@ export default function ModuleApp() {
   const handleSyncAccess = async () => {
     setIsSyncing(true);
     try {
-      const currentRefresh = localStorage.getItem('refreshToken');
-      if (currentRefresh) {
-        const res = await AuthAPI.refreshToken(currentRefresh);
-        if (res.accessToken && res.user) {
-          login(res.accessToken, currentRefresh, res.user);
-          window.location.reload(); 
-          return;
-        }
+      const res = await AuthAPI.refreshToken();
+      if (res.accessToken && res.user) {
+        login(res.user);
+        window.location.reload(); 
+        return;
       }
     } catch (err) {
       console.error("Failed to sync access", err);
@@ -420,6 +416,28 @@ export default function ModuleApp() {
       {/* Main Content Dashboard */}
       <main className="max-w-7xl mx-auto px-4">
         
+        {/* SECURITY PUSH NOTIFICATION BANNER */}
+        {isSupported && !isSubscribed && user?.status !== 'SUSPENDED' && (
+          <div className="mb-6 p-5 bg-slate-900 border border-slate-800 rounded-3xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 animate-in fade-in slide-in-from-top-4 shadow-xl text-left relative z-20 overflow-hidden">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/10 rounded-bl-full -z-10 blur-xl"></div>
+            <div className="flex items-center">
+              <div className="p-2.5 bg-slate-800/80 border border-slate-700 rounded-xl mr-4 shrink-0 shadow-inner">
+                <ShieldAlert className="w-5 h-5 text-emerald-400" />
+              </div>
+              <div>
+                <h4 className="text-sm font-bold text-white tracking-tight">Enable Security Alerts</h4>
+                <p className="text-xs font-medium text-slate-400 mt-0.5">Receive instant push notifications for suspicious logins, credential changes, and account lockouts.</p>
+              </div>
+            </div>
+            <button 
+              onClick={subscribeToPush} 
+              className="w-full sm:w-auto px-6 py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold rounded-xl text-xs uppercase tracking-widest transition-all shadow-[0_0_15px_rgba(16,185,129,0.2)] shrink-0"
+            >
+              Secure Account
+            </button>
+          </div>
+        )}
+
         {/* GENTLE NUDGE BANNER */}
         {user?.isProfileIncomplete && (!user?.isProfileEnforced && user?.isAdmin) && user?.status !== 'SUSPENDED' && (
           <div className="mb-8 p-4 bg-amber-50 border border-amber-200 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 animate-in fade-in slide-in-from-top-4 shadow-sm">
@@ -435,6 +453,8 @@ export default function ModuleApp() {
             </button>
           </div>
         )}
+
+        <MfaSecurityModal />
 
         {user?.status === 'SUSPENDED' ? (
           <div className="embossed-card p-10 text-center max-w-2xl mx-auto mt-16 bg-white/80 backdrop-blur-sm border border-red-100 animate-in zoom-in-95 duration-300">

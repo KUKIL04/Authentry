@@ -3,6 +3,7 @@ import { AppRequest } from '../middlewares/api-key.js';
 import { QueryService } from '../services/query.service.js';
 import { CryptoService } from '../services/crypto.service.js';
 import { EventDispatcherService } from '../services/event-dispatcher.service.js';
+import { RequestUtil } from '../utils/request.util.js';
 
 export class S2SController {
   
@@ -72,7 +73,7 @@ export class S2SController {
       await QueryService.revokeAllUserTokensInWorkspace(userId, tenantId);      
       
       await EventDispatcherService.dispatch(tenantId, 'user.status.updated', { userId, status: 'SUSPENDED' }, 1);
-      await QueryService.logEvent(tenantId, null, 'API_USER_SUSPENDED', req.ip || '0.0.0.0', 'M2M Module SDK', { targetUserId: userId });
+      await QueryService.logEvent(tenantId, null, 'API_USER_SUSPENDED', RequestUtil.getIp(req), 'M2M Module SDK', { targetUserId: userId });
 
       return res.json({ success: true, message: 'User suspended via M2M interaction.' });
     } catch (err) { next(err); }
@@ -110,7 +111,7 @@ export class S2SController {
       };
 
       await EventDispatcherService.dispatch(tenantId, 'identity.sync.forced', syncPayload);
-      await QueryService.logEvent(tenantId, null, 'API_SGC_SYNC_TRIGGERED', req.ip || '0.0.0.0', 'M2M Module SDK', { targetUserId: userId });
+      await QueryService.logEvent(tenantId, null, 'API_SGC_SYNC_TRIGGERED', RequestUtil.getIp(req), 'M2M Module SDK', { targetUserId: userId });
 
       return res.json({ success: true, message: 'State Generation & Consolidation (SGC) re-broadcasted.' });
     } catch (err) { next(err); }

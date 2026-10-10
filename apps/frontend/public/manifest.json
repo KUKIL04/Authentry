@@ -1,0 +1,21 @@
+{
+  "name": "ManavSutra",
+  "short_name": "ManavSutra",
+  "description": "Enterprise Resource Planning and Access Control",
+  "start_url": "/app",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#3b2600",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

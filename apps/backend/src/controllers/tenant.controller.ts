@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { QueryService } from '../services/query.service.js';
 import { CryptoService } from '../services/crypto.service.js';
 import { AuthenticatedRequest } from '../middlewares/auth.js';
+import { RequestUtil } from '../utils/request.util.js';
 import { pool } from '../db/index.js';
 
 export class TenantController {
@@ -81,7 +82,7 @@ export class TenantController {
       }
 
       // Logs the event
-      await QueryService.logEvent(tenant.id, finalAdminUser.id, 'TENANT_ONBOARDED', req.ip || '127.0.0.1', req.headers['user-agent'] || 'unknown', { companyName });
+      await QueryService.logEvent(tenant.id, finalAdminUser.id, 'TENANT_ONBOARDED', RequestUtil.getIp(req), RequestUtil.getAgent(req), { companyName });
 
       return res.status(201).json({ message: 'Workspace provisioned successfully!', tenant, admin: finalAdminUser });
     } catch (err) {

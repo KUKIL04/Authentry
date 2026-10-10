@@ -5,7 +5,9 @@ import { AuthenticatedRequest } from '../middlewares/auth.js';
 import { redisClient } from '../db/redis.js';
 import { AuthController } from './auth.controller.js';
 import { EmailService } from '../services/email.service.js';
+import { PushService } from '../services/push.service.js';
 import { EventDispatcherService } from '../services/event-dispatcher.service.js';
+import { RequestUtil } from '../utils/request.util.js';
 import { deleteCloudinaryAsset } from '../utils/upload.util.js';
 import fs from 'fs';
 import path from 'path';
@@ -48,7 +50,7 @@ export class AdminController {
               await EmailService.sendWorkspaceAddedNotification(email, tenantRecord?.name || 'A new workspace');
           }
 
-          await QueryService.logEvent(tenantId, invitedBy, 'USER_ADDED_TO_WAITING_ROOM', req.ip || '127.0.0.1', req.headers['user-agent'] || 'unknown', { targetUserId: userId });
+          await QueryService.logEvent(tenantId, invitedBy, 'USER_ADDED_TO_WAITING_ROOM', RequestUtil.getIp(req), RequestUtil.getAgent(req), { targetUserId: userId });
 
           return res.json({ 
             existingUser: true, 
@@ -70,7 +72,7 @@ export class AdminController {
         // SENDS THE INVITE EMAIL
         await EmailService.sendInviteEmail(email, mockInviteLink);
 
-        await QueryService.logEvent(tenantId, invitedBy, 'USER_INVITED', req.ip || '127.0.0.1', req.headers['user-agent'] || 'unknown', { email, expiresAt });
+        await QueryService.logEvent(tenantId, invitedBy, 'USER_INVITED', RequestUtil.getIp(req), RequestUtil.getAgent(req), { email, expiresAt });
 
         return res.status(201).json({
           success: true,
@@ -123,8 +125,8 @@ export class AdminController {
         tenantId,
         req.user?.userId || null,
         'INVITATION_REVOKED',
-        req.ip || '127.0.0.1',
-        req.headers['user-agent'] || 'unknown',
+        RequestUtil.getIp(req),
+        RequestUtil.getAgent(req),
         { targetInviteId: inviteId }
       );
 
@@ -151,7 +153,7 @@ export class AdminController {
   static async updateOnboardingSchema(req: AuthenticatedRequest, res: Response, next: NextFunction) {
     try {
       const tenantId = req.user?.tenantId;
-      const userId = req.user?.userId
+      const userId = req.user?.userId;
       const { schema, enforce } = req.body;
       if (!tenantId || !userId) return res.status(400).json({ error: 'Context lost' });
       
@@ -161,7 +163,7 @@ export class AdminController {
       const profileData = await QueryService.getUserProfileData(userId, tenantId);
       const isProfileIncomplete = AuthController.isProfileMissingRequiredFields(schema, profileData);
 
-      await QueryService.logEvent(tenantId, req.user?.userId || null, 'ONBOARDING_SCHEMA_UPDATED', req.ip || '', req.headers['user-agent'] as string || 'unknown', { enforce });
+      await QueryService.logEvent(tenantId, req.user?.userId || null, 'ONBOARDING_SCHEMA_UPDATED', RequestUtil.getIp(req), RequestUtil.getAgent(req), { enforce });
       
       return res.json({ 
         success: true, 
@@ -230,17 +232,35 @@ export class AdminController {
         await redisClient.setEx(`bl:tenant:${tenantId}:${id}`, 900, 'revoked');
         // We intentionally do NOT revoke refresh tokens in the DB here! 
         // This allows for seamless account restoration.
+
+        // Sends a push notification to the user
+        await PushService.sendToUser(id, {
+          title: 'Workspace Access Revoked 🛑',
+          body: 'Your privileges for this environment have been temporarily suspended. Please contact HR.',
+          tag: 'workspace-status',
+          vibrate: [300, 100, 300],
+          url: '/login'
+        });
       } else if (status === 'ACTIVE') {
         // If restored, we lift the Redis block instantly
         await redisClient.del(`bl:tenant:${tenantId}:${id}`);
+        
+        // Sends a push notification to the user
+        await PushService.sendToUser(id, {
+          title: 'Access Restored 🔓',
+          body: 'Your workspace privileges have been reinstated.',
+          tag: 'workspace-status',
+          vibrate: [200, 100, 200],
+          url: '/app'
+        });
       }
       
       await QueryService.logEvent(
         tenantId,
         req.user?.userId || null,
         'USER_STATUS_CHANGED',
-        req.ip || '127.0.0.1',
-        req.headers['user-agent'] || 'unknown',
+        RequestUtil.getIp(req),
+        RequestUtil.getAgent(req),
         { targetUserId: id, newStatus: status }
       );
 
@@ -297,7 +317,18 @@ export class AdminController {
       // Sets user as Active!
       await QueryService.updateUserStatus(targetUserId, tenantId, 'ACTIVE');
 
-      // 4. Fetch full user details and context for Webhook Delivery
+      // Send Push Notification to the user
+      await PushService.sendToUser(targetUserId, {
+        title: 'Access Granted ✅',
+        body: 'Your workspace access has been approved by your administrator. You can now launch your applications.',
+        tag: 'workspace-status',
+        vibrate: [200, 100, 200], // Happy double-tap
+        url: '/app',
+        actions: [{ action: 'launch', title: 'Launch Workspace' }],
+        actionUrls: { 'launch': '/app' }
+      });
+
+      // Fetch full user details and context for Webhook Delivery
       const userRecord = await QueryService.getUserByIdAndTenant(targetUserId, tenantId);
       const accessContext = await QueryService.getUserAccessContext(targetUserId, tenantId);
 
@@ -305,8 +336,8 @@ export class AdminController {
         tenantId,
         adminId,
         'ACCESS_GRANTED',
-        req.ip || '127.0.0.1',
-        req.headers['user-agent'] || 'unknown',
+        RequestUtil.getIp(req),
+        RequestUtil.getAgent(req),
         { targetUserId, moduleIds, roleIds }
       );
 
@@ -341,7 +372,7 @@ export class AdminController {
       try {
         await QueryService.updateEmployeeId(userId, tenantId, employeeId);
         
-        await QueryService.logEvent(tenantId, req.user?.userId!, 'EMPLOYEE_ID_UPDATED', req.ip || '127.0.0.1', req.headers['user-agent'] as string || 'unknown', { targetUserId: userId, newEmployeeId: employeeId });
+        await QueryService.logEvent(tenantId, req.user?.userId!, 'EMPLOYEE_ID_UPDATED', RequestUtil.getIp(req), RequestUtil.getAgent(req), { targetUserId: userId, newEmployeeId: employeeId });
         
         return res.json({ success: true, message: 'Employee ID updated successfully.' });
       } catch (e: any) {
@@ -392,7 +423,7 @@ export class AdminController {
         }
       }
 
-      await QueryService.logEvent(tenantId, req.user?.userId || null, 'CUSTOM_ROLE_CREATED', req.ip || '127.0.0.1', req.headers['user-agent'] as string || 'unknown', { roleName: name });
+      await QueryService.logEvent(tenantId, req.user?.userId || null, 'CUSTOM_ROLE_CREATED', RequestUtil.getIp(req), RequestUtil.getAgent(req), { roleName: name });
 
       return res.status(201).json({ success: true, role: newRole, message: 'Custom role compiled and ready for assignment.' });
     } catch (err) {
@@ -425,7 +456,7 @@ export class AdminController {
         }
       }
 
-      await QueryService.logEvent(tenantId, req.user?.userId || null, 'CUSTOM_ROLE_UPDATED', req.ip || '127.0.0.1', req.headers['user-agent'] as string || 'unknown', { roleId, roleName: name });
+      await QueryService.logEvent(tenantId, req.user?.userId || null, 'CUSTOM_ROLE_UPDATED', RequestUtil.getIp(req), RequestUtil.getAgent(req), { roleId, roleName: name });
 
       return res.json({ success: true, role: updatedRole, message: 'Custom role updated successfully.' });
     } catch (err) {
@@ -449,7 +480,7 @@ export class AdminController {
         return res.status(404).json({ error: 'Role not found or is a protected system template.' });
       }
 
-      await QueryService.logEvent(tenantId, req.user?.userId || null, 'CUSTOM_ROLE_DELETED', req.ip || '127.0.0.1', req.headers['user-agent'] as string || 'unknown', { roleId });
+      await QueryService.logEvent(tenantId, req.user?.userId || null, 'CUSTOM_ROLE_DELETED', RequestUtil.getIp(req), RequestUtil.getAgent(req), { roleId });
 
       return res.json({ success: true, message: 'Role permanently deleted.' });
     } catch (err) {
@@ -683,6 +714,17 @@ export class AdminController {
       const randomScramble = await CryptoService.hashPassword(CryptoService.generateRandomToken());
       await QueryService.updateUserPassword(userRecord.email, randomScramble);
 
+      // Sends a push notification to the user to alert them of the forced reset
+      await PushService.sendToUser(userId, {
+        title: 'Mandatory Password Reset ⚠️',
+        body: 'Your administrator has invalidated your current password for security reasons.',
+        tag: 'security-alert',
+        vibrate: [400, 100, 400],
+        url: '/login',
+        actions: [{ action: 'recover', title: 'Setup New Password' }],
+        actionUrls: { 'recover': '/forgot-password' }
+      });
+
       // Nukes all database sessions for this user
       await QueryService.revokeAllUserTokensInWorkspace(userId, tenantId);
       
@@ -697,8 +739,8 @@ export class AdminController {
         tenantId,
         adminId || null,
         'ADMIN_FORCED_PASSWORD_RESET',
-        req.ip || '127.0.0.1',
-        req.headers['user-agent'] || 'unknown',
+        RequestUtil.getIp(req),
+        RequestUtil.getAgent(req),
         { targetUserId: userId }
       );
 
@@ -737,8 +779,8 @@ export class AdminController {
         tenantId,
         adminId || null,
         'SECURITY_LOCKOUT_CLEARED',
-        req.ip || '127.0.0.1',
-        req.headers['user-agent'] || 'unknown',
+        RequestUtil.getIp(req),
+        RequestUtil.getAgent(req),
         { targetUserId: userId }
       );
       
@@ -932,7 +974,7 @@ export class AdminController {
 
       // Audit Log
       await QueryService.logEvent(
-        tenantId, req.user?.userId || null, 'SUBSCRIPTION_UPGRADED', req.ip || '127.0.0.1', 'System', { newPlan: planCode }
+        tenantId, req.user?.userId || null, 'SUBSCRIPTION_UPGRADED', RequestUtil.getIp(req), RequestUtil.getAgent(req), { newPlan: planCode }
       );
 
       // We flush the Redis cache so the Quota Engine instantly recognizes the new limits
@@ -1062,7 +1104,7 @@ export class AdminController {
         }
       }
 
-      await QueryService.logEvent(tenantId, adminId, 'BULK_IMPORT_PROCESSED', req.ip || '127.0.0.1', req.headers['user-agent'] as string || 'unknown', { successCount, failureCount });
+      await QueryService.logEvent(tenantId, adminId, 'BULK_IMPORT_PROCESSED', RequestUtil.getIp(req), RequestUtil.getAgent(req), { successCount, failureCount });
 
       return res.json({ 
         success: true, 
@@ -1162,7 +1204,7 @@ export class AdminController {
         dispatchedCount++;
       }
 
-      await QueryService.logEvent(tenantId, req.user?.userId!, 'WORKSPACE_BULK_SYNC_TRIGGERED', req.ip || '127.0.0.1', req.headers['user-agent'] as string || 'unknown', { dispatchedCount });
+      await QueryService.logEvent(tenantId, req.user?.userId!, 'WORKSPACE_BULK_SYNC_TRIGGERED', RequestUtil.getIp(req), RequestUtil.getAgent(req), { dispatchedCount });
 
       return res.json({ 
         success: true, 

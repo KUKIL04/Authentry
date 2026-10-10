@@ -4,6 +4,17 @@ import { QueryService } from '../services/query.service.js';
 import { CryptoService } from '../services/crypto.service.js';
 import { AuthController } from './auth.controller.js';
 
+const setAccessTokenCookie = (res: Response, accessToken: string) => {
+  const isProd = process.env.NODE_ENV === 'production';
+  res.cookie('accessToken', accessToken, {
+    httpOnly: true,
+    secure: isProd,
+    sameSite: isProd ? 'none' : 'lax',
+    path: '/',
+    maxAge: 15 * 60 * 1000 // 15 mins
+  });
+};
+
 export class UserController {
   // Checks current profile status (Useful for the Waiting Room)
   static async getMyProfile(req: AuthenticatedRequest, res: Response, next: NextFunction) {
@@ -22,7 +33,6 @@ export class UserController {
     }
   }
 
-  // REPLACES: getMyModules
   // Returns the calculated entitlements tree for the frontend Launchpad UI
   static async getMyAccess(req: AuthenticatedRequest, res: Response, next: NextFunction) {
     try {
@@ -90,11 +100,13 @@ export class UserController {
         isAdmin: userRecord.is_tenant_admin || false,
         roles: accessContext.roles,
         entitlements: accessContext.entitlements,
-        isProfileIncomplete: false, // FREEDOM!
+        isProfileIncomplete: false,
         isProfileEnforced: tenantContext?.enforce_profile_completion
       };
 
       const newAccessToken = CryptoService.generateAccessToken(userPayload);
+
+      setAccessTokenCookie(res, newAccessToken);
 
       return res.json({ success: true, accessToken: newAccessToken, user: userPayload, message: 'Profile updated.' });
     } catch (err) { next(err); }
@@ -137,6 +149,8 @@ export class UserController {
 
       const newAccessToken = CryptoService.generateAccessToken(userPayload);
 
+      setAccessTokenCookie(res, newAccessToken);
+      
       return res.json({
         success: true,
         accessToken: newAccessToken,

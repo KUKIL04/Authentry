@@ -97,8 +97,12 @@ export default function SecurityControl() {
                       const isSelf = session.email === currentUser?.email;
 
                       const parser = session.user_agent ? new UAParser(session.user_agent) : null;
-                      const browser = parser ? parser.getBrowser().name || 'Unknown Browser' : 'Unknown Browser';
-                      const os = parser ? parser.getOS().name || 'Unknown OS' : 'Unknown OS';
+                      const browser = parser?.getBrowser().name;
+                      const os = parser?.getOS().name;
+
+                      const displayAgent = (!browser && !os) 
+                          ? session.user_agent 
+                          : `${browser || 'Unknown'} on ${os || 'Unknown'}`;
 
                       return (
                       <tr key={session.id} className="border-b border-slate-300/50 hover:bg-slate-100 transition-colors">
@@ -115,7 +119,7 @@ export default function SecurityControl() {
                           </div>
                           {session.user_agent && (
                             <div className="text-[14px] text-slate-500 mt-1 font-sans font-medium">
-                              {browser} on {os}
+                              {displayAgent}
                             </div>
                           )}
                         </td>

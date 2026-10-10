@@ -5,6 +5,7 @@ import { AuthAPI } from '../../api/auth.api';
 import { useAuth } from '../../hooks/useAuth';
 import { Loader2, Mail, Lock, Building2, ArrowRight, ArrowLeft, ShieldAlert, ShieldCheck, AlertTriangle, CheckCircle2, User, Ban } from 'lucide-react';
 import AuthLayout from '../../components/layout/AuthLayout';
+import { MfaHoldScreen } from '../../components/auth/MfaHoldScreen';
 
 interface TenantOption {
   tenantId: string;
@@ -17,7 +18,8 @@ export default function Login() {
   const location = useLocation();
   const { login } = useAuth();
   
-  const [step, setStep] = useState<'CREDENTIALS' | 'WORKSPACE_SELECT' | 'FROZEN' | 'USER_SUSPENDED' | 'REDIRECTING' | 'SECURITY_BLOCK' | 'ORPHANED'>('CREDENTIALS');
+  const [step, setStep] = useState<'CREDENTIALS' | 'MFA_HOLD' | 'WORKSPACE_SELECT' | 'FROZEN' | 'USER_SUSPENDED' | 'REDIRECTING' | 'SECURITY_BLOCK' | 'ORPHANED' | 'TOKEN_THEFT'>('CREDENTIALS');
+  const [mfaChallenge, setMfaChallenge] = useState<{ attemptId: string; challengeCode: string; expiresIn: number } | null>(null);
   const [securityMessage, setSecurityMessage] = useState('');
   const [availableTenants, setAvailableTenants] = useState<TenantOption[]>([]);
   const [tempToken, setTempToken] = useState<string | null>(null);
@@ -25,12 +27,14 @@ export default function Login() {
 
   const [formData, setFormData] = useState({ email: '', password: '' });
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState(location.state?.message || '');
 
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const redirectUri = searchParams.get('redirectUri');
   const targetTenantId = searchParams.get('targetTenantId');
   const clientId = searchParams.get('clientId');
+  const urlError = searchParams.get('error');
+
+  const [error, setError] = useState(urlError || location.state?.message || '');
 
   // Safely extract the target hostname for the UI
   const targetHost = redirectUri ? (() => {
@@ -46,7 +50,25 @@ export default function Login() {
       // Clean up the history state so the error doesn't lock the UI on reload
       window.history.replaceState({}, document.title);
     }
-  }, [location]);
+    // Handle URL Errors (from Interceptor Redirects)
+    if (urlError) {
+      // Smart Routing: If the error contains security keywords from our backend, show the intense UI
+      const isSecurityEvent = urlError.includes('Compromised') || urlError.includes('Suspicious') || urlError.includes('mismatch');
+      
+      if (isSecurityEvent) {
+        setSecurityMessage(urlError);
+        setStep('TOKEN_THEFT');
+      } else {
+        setError(urlError); // Standard expiration goes to the normal banner
+      }
+
+      // Clean up the URL so the error doesn't persist if they refresh the page
+      searchParams.delete('error');
+      setSearchParams(searchParams, { replace: true });
+    } else if (location.state?.message && !frozenMessage) {
+      setError(location.state.message);
+    }
+  }, [location, urlError, searchParams, setSearchParams, frozenMessage]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, [e.target.name]: e.target.value });
 
@@ -58,6 +80,27 @@ export default function Login() {
     }, 1500);
   };
 
+  const handleLoginSuccess = (response: any) => {
+    if (response.requiresMfa) {
+      setMfaChallenge({
+        attemptId: response.attemptId,
+        challengeCode: response.challengeCode,
+        expiresIn: response.expiresIn || 180
+      });
+      setStep('MFA_HOLD');
+    } else if (response.requiresTenantSelection) {
+      setAvailableTenants(response.tenants);
+      setTempToken(response.tempToken);
+      setStep('WORKSPACE_SELECT');
+    } else if (response.redirectUrl) {
+      if (response.user) login(response.user);
+      executeRedirect(response.redirectUrl);
+    } else if (response.user) {
+      login(response.user);
+      navigate(location.state?.from?.pathname || '/', { replace: true });
+    }
+  };
+
   const handleCredentialSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -65,20 +108,7 @@ export default function Login() {
     try {
       const response = await AuthAPI.login(formData.email, formData.password, redirectUri || undefined, targetTenantId || undefined, clientId || undefined);
       
-      if (response.requiresTenantSelection) {
-        setAvailableTenants(response.tenants);
-        setTempToken(response.tempToken);
-        setStep('WORKSPACE_SELECT');
-      } else if (response.redirectUrl) {
-        // Establish the True SSO Session in the IDP Frontend first!
-        if (response.accessToken) {
-          login(response.accessToken, response.refreshToken, response.user);
-        }
-        executeRedirect(response.redirectUrl);
-      } else {
-        login(response.accessToken, response.refreshToken, response.user);
-        navigate(location.state?.from?.pathname || '/', { replace: true });
-      }
+      handleLoginSuccess(response);
     } catch (err: any) {
       if (err.response?.data?.error === 'WORKSPACE_FROZEN') {
         setFrozenMessage(err.response?.data?.message || 'Your workspace access has been suspended.');
@@ -105,15 +135,15 @@ export default function Login() {
     setError('');
     setIsLoading(true);
     try {
-      const response = await AuthAPI.selectWorkspace(tempToken, tenantId, undefined, redirectUri || undefined, clientId || undefined);
+      const response = await AuthAPI.selectWorkspace(tempToken, tenantId, redirectUri || undefined, clientId || undefined);
       if (response.redirectUrl) {
         // Establish the True SSO Session!
-        if (response.accessToken) {
-          login(response.accessToken, response.refreshToken, response.user);
+        if (response.user) {
+          login(response.user);
         }
         executeRedirect(response.redirectUrl);
       } else {
-        login(response.accessToken, response.refreshToken, response.user);
+        login(response.user);
         navigate(location.state?.from?.pathname || '/', { replace: true });
       }
     } catch (err: any) {
@@ -144,6 +174,7 @@ export default function Login() {
               {step === 'WORKSPACE_SELECT' && 'Select Workspace'}
               {step === 'FROZEN' && 'Access Suspended'}
               {step === 'USER_SUSPENDED' && 'Access Suspended'}
+              {step === 'TOKEN_THEFT' && 'Security Intervention'}
               {step === 'REDIRECTING' && 'Authentication Successful'}
             </h2>
             <p className="text-sm text-slate-500 mt-1.5 font-medium">
@@ -151,6 +182,7 @@ export default function Login() {
               {step === 'WORKSPACE_SELECT' && `Found ${availableTenants.length} environments linked to this identity.`}
               {step === 'FROZEN' && 'Your organization\'s network access has been revoked.'}
               {step === 'USER_SUSPENDED' && 'Your privileges for this environment have been revoked.'}
+              {step === 'TOKEN_THEFT' && 'We intercepted an anomaly and secured your account.'}
               {step === 'REDIRECTING' && 'Establishing secure connection...'}
             </p>
         </div>
@@ -197,6 +229,23 @@ export default function Login() {
             </div>
           )}
 
+          {step === 'MFA_HOLD' && mfaChallenge && (
+            <MfaHoldScreen
+              attemptId={mfaChallenge.attemptId}
+              challengeCode={mfaChallenge.challengeCode}
+              initialExpiresIn={mfaChallenge.expiresIn}
+              onApproved={handleLoginSuccess}
+              onDenied={(msg) => {
+                setSecurityMessage(msg);
+                setStep('TOKEN_THEFT');
+              }}
+              onCancel={() => {
+                setMfaChallenge(null);
+                setStep('CREDENTIALS');
+              }}
+            />
+          )}
+
           {step === 'WORKSPACE_SELECT' && (
             <div className="animate-in fade-in slide-in-from-right-4 duration-300 space-y-4 max-h-[400px] overflow-y-auto neumorphic-scrollbar px-1">
               {availableTenants.map((tenant) => (
@@ -230,6 +279,50 @@ export default function Login() {
                   <span>Use Different Account</span>
                 </button>
               </div>
+            </div>
+          )}
+
+          {/* TOKEN THEFT & ANOMALY UI */}
+          {step === 'TOKEN_THEFT' && (
+            <div className="animate-in zoom-in-95 duration-300 text-center py-6">
+              <div className="absolute top-0 left-0 w-full h-1 bg-red-600"></div>
+              
+              <div className="flex justify-center mb-6">
+                <div className="relative">
+                  <div className="absolute inset-0 rounded-full animate-ping opacity-20 bg-red-600"></div>
+                  <div className="bg-slate-900 p-4 rounded-full border border-red-500/30 shadow-2xl relative z-10">
+                    <ShieldAlert className="w-10 h-10 text-red-500" />
+                  </div>
+                </div>
+              </div>
+
+              <h3 className="text-xl font-bold text-slate-800 mb-3 tracking-tight">Active Sessions Terminated</h3>
+              
+              <div className="bg-red-50 border border-red-200 shadow-sm p-5 rounded-2xl mb-6 text-left">
+                <div className="flex items-start">
+                  <AlertTriangle className="w-5 h-5 text-red-600 mr-3 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm text-red-800 font-bold mb-1">
+                      Account Secured
+                    </p>
+                    <p className="text-sm text-red-700 font-medium leading-relaxed">
+                      {securityMessage || 'A suspicious login attempt or token replay was detected. To protect your account, all your active sessions have been instantly revoked.'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <button 
+                onClick={() => {
+                  setStep('CREDENTIALS');
+                  setFormData({ email: '', password: '' });
+                  setError('');
+                }}
+                className="w-full flex items-center justify-center space-x-2 py-4 text-white bg-slate-800 hover:bg-slate-900 shadow-md font-bold rounded-2xl text-xs tracking-widest uppercase transition-all"
+              >
+                <Lock className="w-4 h-4 mr-2 text-slate-400" />
+                <span>Authenticate Again</span>
+              </button>
             </div>
           )}
 

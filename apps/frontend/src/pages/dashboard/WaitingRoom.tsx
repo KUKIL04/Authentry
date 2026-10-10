@@ -2,8 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../hooks/useAuth';
 import { UserAPI } from '../../api/user.api';
 import { AuthAPI } from '../../api/auth.api';
-import { RefreshCw, LogOut, ShieldCheck, Hourglass, ArrowRightLeft, Building2, X, ArrowRight, Ban } from 'lucide-react';
+import { RefreshCw, LogOut, ShieldCheck, Hourglass, ArrowRightLeft, Building2, X, ArrowRight, Ban, BellRing } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { usePushNotifications } from '../../hooks/usePushNotifications';
 import AuthLayout from '../../components/layout/AuthLayout';
 
 export default function WaitingRoom() {
@@ -12,6 +13,8 @@ export default function WaitingRoom() {
   const navigate = useNavigate();
   const [isChecking, setIsChecking] = useState(false);
   const [message, setMessage] = useState('');
+
+  const { isSupported, isSubscribed, subscribeToPush } = usePushNotifications();
 
   // --- Switch Workspace State ---
   const [isSwitchModalOpen, setIsSwitchModalOpen] = useState(false);
@@ -61,11 +64,10 @@ export default function WaitingRoom() {
     if (!switchTempToken) return;
     setIsSwitching(true);
     try {
-      const oldRefreshToken = localStorage.getItem('refreshToken') || undefined;
-      const response = await AuthAPI.selectWorkspace(switchTempToken, tenantId, oldRefreshToken);
+      const response = await AuthAPI.selectWorkspace(switchTempToken, tenantId);
       
       // Update global context with new credentials & instantly refetch branding
-      login(response.accessToken, response.refreshToken, response.user);
+      login(response.user);
       
       setIsSwitchModalOpen(false);
       
@@ -99,6 +101,27 @@ export default function WaitingRoom() {
             </span>
           </p>
         </div>
+
+        {/* PUSH NOTIFICATION OPT-IN BANNER */}
+        {isSupported && !isSubscribed && (
+          <div className="mb-6 p-4 bg-indigo-50 border border-indigo-200 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 animate-in fade-in slide-in-from-top-4 shadow-sm text-left relative z-20">
+            <div className="flex items-center">
+              <div className="p-2 bg-indigo-100 rounded-xl mr-3 shrink-0">
+                <BellRing className="w-5 h-5 text-indigo-600 animate-pulse" />
+              </div>
+              <div>
+                <h4 className="text-sm font-bold text-indigo-900 tracking-tight">Stay Updated</h4>
+                <p className="text-xs font-medium text-indigo-700 mt-0.5">Enable notifications to be instantly alerted when HR approves your workspace access.</p>
+              </div>
+            </div>
+            <button 
+              onClick={subscribeToPush} 
+              className="w-full sm:w-auto px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-[10px] sm:text-xs uppercase tracking-widest transition-all shadow-md shrink-0"
+            >
+              Enable Alerts
+            </button>
+          </div>
+        )}
 
         {message && (
           <div className="mb-6 bg-slate-100 border border-slate-200 text-slate-600 px-4 py-3 rounded-2xl text-sm font-semibold animate-in fade-in slide-in-from-top-2">

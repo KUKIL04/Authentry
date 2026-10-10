@@ -312,4 +312,121 @@ export class EmailService {
       console.error("Failed to send plan upgrade email:", error);
     }
   }
+
+  // --- 10. Suspicious Login/Refresh Attempt Notification ---
+  static async sendSuspiciousActivityEmail(
+    to: string, 
+    location: string, 
+    ipAddress: string, 
+    device: string
+  ) {
+    try {
+      const transporter = await this.getTransporter();
+      const timestamp = new Date().toUTCString();
+
+      const info = await Telemetry.track('email', 'send_suspicious_activity', async () => {
+        return await transporter.sendMail({
+          from: '"Workspace Security" <security@authentry.com>',
+          to,
+          subject: 'Security Alert: Suspicious Activity Blocked',
+          html: `
+            <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; padding: 24px; color: #1e293b; background-color: #f8fafc; border-radius: 12px; max-width: 580px; margin: 0 auto; border: 1px solid #e2e8f0;">
+              <h2 style="color: #dc2626; margin-top: 0; font-size: 20px;">Suspicious Activity Intercepted</h2>
+              <p style="font-size: 14px; line-height: 1.6; color: #475569;">
+                A session refresh request occurred with anomalous security parameters (sudden geographical discrepancy). For your security, this session was terminated immediately.
+              </p>
+              
+              <div style="background-color: #ffffff; border: 1px solid #fee2e2; border-left: 4px solid #ef4444; border-radius: 8px; padding: 16px; margin: 20px 0;">
+                <table style="width: 100%; font-size: 13px; color: #334155; border-collapse: collapse;">
+                  <tr>
+                    <td style="padding: 6px 0; font-weight: 600; width: 110px;">Device / Client:</td>
+                    <td style="padding: 6px 0; font-family: monospace;">${device}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 6px 0; font-weight: 600;">Location:</td>
+                    <td style="padding: 6px 0;">${location}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 6px 0; font-weight: 600;">IP Address:</td>
+                    <td style="padding: 6px 0; font-family: monospace;">${ipAddress}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 6px 0; font-weight: 600;">Timestamp:</td>
+                    <td style="padding: 6px 0;">${timestamp}</td>
+                  </tr>
+                </table>
+              </div>
+              
+              <p style="font-size: 13px; line-height: 1.6; color: #64748b; margin-bottom: 0;">
+                If this was you switching to a VPN or travelling, please log in again. If you did not initiate this action, someone may possess your expired session artifacts; change your password immediately.
+              </p>
+            </div>
+          `
+        });
+      });
+      console.log(`\n📩 Suspicious activity email sent to ${to}\n🔗 Preview: %s\n`, nodemailer.getTestMessageUrl(info));
+    } catch (error) {
+      console.error("Failed to send suspicious activity email:", error);
+    }
+  }
+
+  // --- 11. Token Theft Replay Alert Notification ---
+  static async sendTokenTheftAlertEmail(
+    to: string, 
+    ipAddress: string, 
+    device: string, 
+    location: string
+  ) {
+    try {
+      const transporter = await this.getTransporter();
+      const timestamp = new Date().toUTCString();
+
+      const info = await Telemetry.track('email', 'send_token_theft', async () => {
+        return await transporter.sendMail({
+          from: '"Workspace Security" <security@authentry.com>',
+          to,
+          subject: 'CRITICAL: Potential Session Hijacking Blocked',
+          html: `
+            <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; padding: 24px; color: #1e293b; background-color: #f8fafc; border-radius: 12px; max-width: 580px; margin: 0 auto; border: 1px solid #e2e8f0;">
+              <h2 style="color: #b91c1c; margin-top: 0; font-size: 20px;">CRITICAL: Token Replay Attack Intercepted</h2>
+              <p style="font-size: 14px; line-height: 1.6; color: #475569;">
+                Our security perimeter detected a <strong>Token Reuse Attempt</strong>. A previously rotated, invalidated cryptographic refresh token was presented to our API.
+              </p>
+              
+              <div style="background-color: #fef2f2; border: 1px solid #f87171; border-radius: 8px; padding: 16px; margin: 20px 0;">
+                <p style="margin: 0 0 10px 0; font-size: 13px; font-weight: 700; color: #991b1b;">
+                  Action Taken: ALL active sessions across all devices were terminated immediately.
+                </p>
+                <table style="width: 100%; font-size: 13px; color: #334155; border-collapse: collapse;">
+                  <tr>
+                    <td style="padding: 4px 0; font-weight: 600; width: 110px;">Attacker Device:</td>
+                    <td style="padding: 4px 0; font-family: monospace;">${device}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 4px 0; font-weight: 600;">Origin Location:</td>
+                    <td style="padding: 4px 0;">${location}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 4px 0; font-weight: 600;">Origin IP:</td>
+                    <td style="padding: 4px 0; font-family: monospace;">${ipAddress}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 4px 0; font-weight: 600;">Time:</td>
+                    <td style="padding: 4px 0;">${timestamp}</td>
+                  </tr>
+                </table>
+              </div>
+              
+              <p style="font-size: 13px; color: #64748b;">
+                Please log in through the official portal and immediately change your password to secure your credentials.
+              </p>
+            </div>
+          `
+        });
+      });
+      console.log(`\n📩 Token theft email sent to ${to}\n🔗 Preview: %s\n`, nodemailer.getTestMessageUrl(info));
+    } catch (error) {
+      console.error("Failed to send token theft email:", error);
+    }
+  }
 }

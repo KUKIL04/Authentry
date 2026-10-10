@@ -30,12 +30,16 @@ export interface AuthenticatedRequest extends Request {
 // Ensures user has valid JWT and is not blacklisted
 export async function requireAuth(req: AuthenticatedRequest, res: Response, next: NextFunction) {
   try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({ error: 'Authorization header is missing or malformed' });
+    // EXTRACT TOKEN (Prioritize secure cookie, fallback to header for SDK/M2M)
+    let token = req.cookies?.accessToken;
+    
+    if (!token && req.headers.authorization?.startsWith('Bearer ')) {
+      token = req.headers.authorization.split(' ')[1];
     }
 
-    const token = authHeader.split(' ')[1];
+    if (!token) {
+      return res.status(401).json({ error: 'Authorization cookie or header is missing' });
+    }
     
     // Verifies JWT cryptographically
     const decodedPayload = CryptoService.verifyAccessToken(token);
@@ -53,7 +57,9 @@ export async function requireAuth(req: AuthenticatedRequest, res: Response, next
       req.originalUrl.includes('/user/me') ||
       req.originalUrl.includes('/user/platform-profile') ||
       req.originalUrl.includes('/auth/workspaces') || 
-      req.originalUrl.includes('/auth/logout');
+      req.originalUrl.includes('/auth/logout')
+      req.originalUrl.includes('/auth/mfa/') ||
+      req.originalUrl.includes('/push/');
 
       // Admin Safe Harbor. Admins can always access the control plane to fix schemas.
       const isAdminSafeHarbor = decodedPayload.isAdmin && req.originalUrl.includes('/admin');
