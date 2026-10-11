@@ -3,7 +3,9 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { 
   ShieldCheck, Users, Key, ArrowRight, CheckCircle2, 
-  Building2, Layers, Lock, Activity, Mail, FileText, UserCheck 
+  Building2, Layers, Lock, Activity, Mail, FileText, UserCheck, 
+  Briefcase,
+  LogIn
 } from 'lucide-react';
 
 export default function Home() {
@@ -47,13 +49,30 @@ export default function Home() {
             <Link to="/pricing" className="hover:text-gamboge-600 transition-colors">Plans & Tiers</Link>
             <a href="mailto:spheri20verse04@gmail.com" className="hover:text-gamboge-600 transition-colors">Support</a>
           </div>
-          <div className="flex items-center space-x-4">
-            <Link to="/login" className="text-sm font-bold uppercase tracking-widest text-slate-500 hover:text-slate-900 transition-colors hidden sm:block">
-              Sign In
-            </Link>
-            <Link to="/onboard-workspace" className="shine-btn px-6 py-2.5 rounded-xl text-white text-xs font-bold uppercase tracking-widest shadow-md">
-              Provision Workspace
-            </Link>
+          <div className="flex items-center space-x-2 sm:space-x-4"> 
+            <Link 
+              to="/login" 
+              className="p-2.5 text-slate-500 hover:text-slate-900 transition-colors flex items-center justify-center md:px-0 md:py-0"
+            > 
+              {/* Icon shown on small screens */}
+              <LogIn className="w-5 h-5 md:hidden" />
+              {/* Text shown on medium screens and up */}
+              <span className="hidden md:inline text-sm font-bold uppercase tracking-widest">
+                Sign In
+              </span> 
+            </Link> 
+
+            <Link 
+              to="/onboard-workspace" 
+              className="shine-btn p-2.5 sm:p-3 md:px-6 md:py-2.5 rounded-xl text-white shadow-md flex items-center justify-center"
+            > 
+              {/* Icon shown on small screens */}
+              <Briefcase className="w-4 h-4 md:hidden" />
+              {/* Text shown on medium screens and up */}
+              <span className="hidden md:inline text-xs font-bold uppercase tracking-widest">
+                Provision Workspace
+              </span> 
+            </Link> 
           </div>
         </div>
       </nav>

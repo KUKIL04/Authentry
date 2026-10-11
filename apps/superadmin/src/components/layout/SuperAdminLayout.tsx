@@ -29,7 +29,7 @@ export default function SuperAdminLayout() {
         { name: 'Software Suites', path: '/apps', icon: Terminal },
         { name: 'Role Blueprints', path: '/blueprints', icon: Layers },
         { name: 'Tenant Fleet', path: '/tenants', icon: Building2 },
-        { name: 'Global Identity', path: '/users', icon: Users },
+        { name: 'Global Users', path: '/users', icon: Users },
       ]
     },
     {
