@@ -23,6 +23,7 @@ router.post('/logout', AuthController.logout);
 router.get('/mfa/status/:attemptId', AuthController.getMfaStatus);
 router.get('/mfa/active', requireAuth, AuthController.getActiveMfaChallenge);
 router.post('/mfa/resolve', AuthController.resolveMfaChallenge);
+router.post('/mfa/resend-push', AuthController.resendMfaPush);
 router.post('/mfa/email-fallback/send', AuthController.sendMfaEmailFallback);
 router.post('/mfa/email-fallback/verify', AuthController.verifyMfaEmailFallback);
 

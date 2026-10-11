@@ -38,6 +38,12 @@ export default function ProvisioningManager() {
   const [revokeModal, setRevokeModal] = useState<{isOpen: boolean, inviteId: string | null, email: string}>({ isOpen: false, inviteId: null, email: '' });
 
   const [openDropdownId, setOpenDropdownId] = useState<string | null>(null);
+  const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number; openUpward: boolean }>({
+    top: 0,
+    left: 0,
+    openUpward: false
+  });
+  const [roleSearch, setRoleSearch] = useState('');
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { fetchData(); }, []);
@@ -46,11 +52,43 @@ export default function ProvisioningManager() {
     const handleClickOutside = (event: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setOpenDropdownId(null);
+        setRoleSearch('');
       }
     };
+    const handleScrollOrResize = (event: Event) => {
+      // Do not close if the user is scrolling inside the role dropdown list itself
+      if (dropdownRef.current && dropdownRef.current.contains(event.target as Node)) return;
+      setOpenDropdownId(null);
+    };
+
     document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    window.addEventListener('scroll', handleScrollOrResize, true);
+    window.addEventListener('resize', handleScrollOrResize);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      window.removeEventListener('scroll', handleScrollOrResize, true);
+      window.removeEventListener('resize', handleScrollOrResize);
+    };
   }, []);
+
+  const toggleRoleDropdown = (userId: string, e: React.MouseEvent<HTMLButtonElement>) => {
+    if (openDropdownId === userId) {
+      setOpenDropdownId(null);
+      setRoleSearch('');
+      return;
+    }
+    const rect = e.currentTarget.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const openUpward = spaceBelow < 280;
+
+    setDropdownPos({
+      top: openUpward ? rect.top - 8 : rect.bottom + 8,
+      left: Math.min(rect.left, window.innerWidth - 280),
+      openUpward
+    });
+    setRoleSearch('');
+    setOpenDropdownId(userId);
+  };
 
   const fetchData = async () => {
     setIsLoadingQueue(true);
@@ -381,51 +419,126 @@ export default function ProvisioningManager() {
                           </td>
                           
                           <td className="py-4 sm:py-5 px-4 sm:px-6 align-middle">
-                            <div className="relative inline-block text-left w-full max-w-[220px]" ref={openDropdownId === user.id ? dropdownRef : null}>
+                            <div className="flex flex-col gap-2 max-w-[260px]">
                               <button
-                                onClick={() => setOpenDropdownId(openDropdownId === user.id ? null : user.id)}
-                                className={`w-full px-4 py-2.5 bg-slate-100 border hover:bg-white text-xs font-bold rounded-xl flex items-center justify-between shadow-sm transition-all ${
-                                  selections[user.id]?.roles?.length ? 'border-gamboge-400 text-gamboge-700 ring-1 ring-gamboge-100' : 'border-slate-200 text-slate-600'
+                                type="button"
+                                onClick={(e) => toggleRoleDropdown(user.id, e)}
+                                className={`w-full px-3.5 py-2.5 bg-slate-100 border hover:bg-white text-xs font-bold rounded-xl flex items-center justify-between shadow-sm transition-all ${
+                                  selections[user.id]?.roles?.length
+                                    ? 'border-gamboge-400 text-gamboge-700 bg-gamboge-50/40 ring-1 ring-gamboge-100'
+                                    : 'border-slate-200 text-slate-600'
                                 }`}
                               >
                                 <span className="truncate mr-2">
-                                  {selections[user.id]?.roles?.length 
-                                    ? `${selections[user.id].roles.length} Role(s) Selected` 
-                                    : 'Select Roles'}
+                                  {selections[user.id]?.roles?.length
+                                    ? `${selections[user.id].roles.length} Role(s) Assigned`
+                                    : 'Assign Job Roles...'}
                                 </span>
-                                <ChevronDown className={`w-4 h-4 shrink-0 transition-transform ${openDropdownId === user.id ? 'rotate-180 text-gamboge-500' : 'text-slate-400'}`} />
+                                <ChevronDown className={`w-4 h-4 shrink-0 transition-transform duration-200 ${openDropdownId === user.id ? 'rotate-180 text-gamboge-600' : 'text-slate-400'}`} />
                               </button>
 
-                              {openDropdownId === user.id && (
-                                <div className="absolute z-50 mt-2 w-56 rounded-2xl bg-white shadow-[0_10px_40px_-10px_rgba(0,0,0,0.2)] border border-slate-200 py-2 left-0 animate-in fade-in slide-in-from-top-2">
-                                  <div className="px-3 py-2 border-b border-slate-100 mb-1">
-                                    <p className="text-[12px] font-bold text-slate-500 uppercase tracking-widest">Assign Job Titles</p>
-                                  </div>
-                                  <div className="max-h-48 overflow-y-auto neumorphic-scrollbar px-1">
-                                    {roles.length === 0 ? (
-                                      <div className="px-3 py-4 text-center text-xs text-slate-400 font-medium">No roles created yet</div>
-                                    ) : (
-                                      roles.map(role => {
-                                        const isSelected = selections[user.id]?.roles?.includes(role.id);
-                                        return (
-                                          <label key={role.id} className="flex items-center px-3 py-2 hover:bg-slate-50 rounded-xl cursor-pointer transition-colors group">
-                                            <input 
-                                              type="checkbox" 
-                                              checked={isSelected}
-                                              onChange={(e) => handleCheckboxChange(user.id, 'roles', role.id, e.target.checked)}
-                                              className="w-4 h-4 rounded border-slate-300 text-gamboge-600 focus:ring-gamboge-500 accent-gamboge-600 mr-3 shrink-0"
-                                            />
-                                            <span className={`text-xs font-bold truncate ${isSelected ? 'text-gamboge-700' : 'text-slate-600 group-hover:text-slate-800'}`}>
-                                              {role.name}
-                                            </span>
-                                          </label>
-                                        );
-                                      })
-                                    )}
-                                  </div>
+                              {/* Selected Role Pills */}
+                              {selections[user.id]?.roles?.length > 0 && (
+                                <div className="flex flex-wrap gap-1.5">
+                                  {selections[user.id].roles.map(roleId => {
+                                    const roleObj = roles.find(r => r.id === roleId);
+                                    if (!roleObj) return null;
+                                    return (
+                                      <span
+                                        key={roleId}
+                                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-bold bg-white border border-gamboge-200 text-gamboge-700 shadow-sm"
+                                      >
+                                        <span className="truncate max-w-[140px]">{roleObj.name}</span>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleCheckboxChange(user.id, 'roles', roleId, false)}
+                                          className="text-slate-400 hover:text-red-500 transition-colors"
+                                        >
+                                          <X className="w-3 h-3" />
+                                        </button>
+                                      </span>
+                                    );
+                                  })}
                                 </div>
                               )}
                             </div>
+
+                            {/* Floating Portal-Style Popover (Never clipped by table overflow) */}
+                            {openDropdownId === user.id && (
+                              <div
+                                ref={dropdownRef}
+                                style={{
+                                  top: dropdownPos.top,
+                                  left: dropdownPos.left,
+                                  transform: dropdownPos.openUpward ? 'translateY(-100%)' : 'none'
+                                }}
+                                className="fixed z-[90] w-64 rounded-2xl bg-white shadow-[0_15px_50px_-10px_rgba(15,23,42,0.28)] border border-slate-200/90 overflow-hidden animate-in fade-in zoom-in-95 duration-150"
+                              >
+                                <div className="p-2.5 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
+                                  <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-widest px-1">
+                                    Job Roles ({roles.length})
+                                  </span>
+                                  {selections[user.id]?.roles?.length > 0 && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setSelections(prev => ({ ...prev, [user.id]: { ...prev[user.id], roles: [] } }))}
+                                      className="text-[10px] font-bold text-red-500 hover:text-red-700 uppercase tracking-wider px-1"
+                                    >
+                                      Clear
+                                    </button>
+                                  )}
+                                </div>
+
+                                {roles.length > 4 && (
+                                  <div className="p-2 border-b border-slate-100">
+                                    <input
+                                      type="text"
+                                      value={roleSearch}
+                                      onChange={(e) => setRoleSearch(e.target.value)}
+                                      placeholder="Filter roles..."
+                                      className="w-full px-2.5 py-1.5 text-xs font-semibold bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-gamboge-500 text-slate-700"
+                                    />
+                                  </div>
+                                )}
+
+                                <div className="max-h-56 overflow-y-auto neumorphic-scrollbar p-1.5 space-y-0.5">
+                                  {roles.length === 0 ? (
+                                    <div className="px-3 py-6 text-center text-xs text-slate-400 font-medium">
+                                      No roles configured yet.
+                                    </div>
+                                  ) : (
+                                    roles
+                                      .filter(r => r.name.toLowerCase().includes(roleSearch.toLowerCase()))
+                                      .map(role => {
+                                        const isSelected = selections[user.id]?.roles?.includes(role.id) || false;
+                                        return (
+                                          <label
+                                            key={role.id}
+                                            className={`flex items-center justify-between px-3 py-2 rounded-xl cursor-pointer transition-all ${
+                                              isSelected ? 'bg-gamboge-50/80 text-gamboge-800' : 'hover:bg-slate-50 text-slate-600'
+                                            }`}
+                                          >
+                                            <div className="flex items-center min-w-0 pr-2">
+                                              <input
+                                                type="checkbox"
+                                                checked={isSelected}
+                                                onChange={(e) => handleCheckboxChange(user.id, 'roles', role.id, e.target.checked)}
+                                                className="w-4 h-4 rounded border-slate-300 text-gamboge-600 focus:ring-gamboge-500 accent-gamboge-600 mr-2.5 shrink-0"
+                                              />
+                                              <span className="text-xs font-bold truncate">{role.name}</span>
+                                            </div>
+                                            {role.is_system_template && (
+                                              <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 shrink-0">
+                                                System
+                                              </span>
+                                            )}
+                                          </label>
+                                        );
+                                      })
+                                  )}
+                                </div>
+                              </div>
+                            )}
                           </td>
 
                           <td className="py-4 sm:py-5 px-4 sm:px-6 text-right align-middle">

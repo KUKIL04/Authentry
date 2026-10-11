@@ -386,7 +386,10 @@ export class AuthController {
       // ==========================================
       // 3. NUMBER-MATCH PUSH MFA INTERCEPT
       // ==========================================
-      const subscriptions = await QueryService.getPushSubscriptions(globalUser.id);
+      // Only trigger Push MFA if the user has at least one active logged-in session AND a registered push device
+      const activeSessions = await QueryService.getActiveSessions(targetRecord.tenant_id);
+      const userHasActiveSession = activeSessions.some((s: any) => s.email === globalUser.email);
+      const subscriptions = userHasActiveSession ? await QueryService.getPushSubscriptions(globalUser.id) : [];
       if (subscriptions.length > 0) {
         const attemptId = crypto.randomUUID();
         const actionToken = crypto.randomBytes(32).toString('hex');
@@ -406,14 +409,14 @@ export class AuthController {
         const clientIp = RequestUtil.getIp(req);
         const deviceMeta = RequestUtil.getDevice(req);
         const locationMeta = RequestUtil.getLocation(clientIp);
-        const resolveUrl = `${req.protocol}://${req.get('host')}/api/v1/auth/mfa/resolve`;
+        const resolveUrl = `/api/v1/auth/mfa/resolve`;
 
         const pushResult = await PushService.sendToUser(globalUser.id, {
           type: 'MFA_CHALLENGE',
-          title: '🔐 Sign-In Verification Request',
-          body: `${deviceMeta.displayName} near ${locationMeta.displayLocation} (${clientIp}). Tap the number shown on your login screen.`,
+          title: 'Sign-In Request',
+          body: `${deviceMeta.displayName} • ${locationMeta.displayLocation} (${clientIp}). Select matching number to approve.`,
           tag: `mfa-${attemptId}`,
-          vibrate: [300, 100, 300, 100, 300],
+          vibrate: [200, 100, 200],
           url: `/app?mfaAttempt=${attemptId}`,
           actions: bannerOptions.map(num => ({
             action: `mfa_pick_${num}`,
@@ -439,6 +442,7 @@ export class AuthController {
             tenantId: targetRecord.tenant_id,
             email: globalUser.email,
             challengeCode,
+            bannerOptions,
             options: modalOptions,
             actionToken,
             status: 'PENDING',
@@ -795,19 +799,27 @@ export class AuthController {
         return res.json({ success: true, message: 'Already resolved.' });
       }
 
-      // Authenticate caller: Either valid Service Worker actionToken OR valid logged-in session cookie
-      let isAuthorized = false;
-      if (actionToken && actionToken === attempt.actionToken) {
-        isAuthorized = true;
-      } else if (req.cookies?.accessToken) {
+      // SECURITY: Verify the approving device is ACTUALLY LOGGED IN via accessToken or refreshToken cookie!
+      // This prevents a logged-out PWA notification button from ever approving a login.
+      let isAuthorizedSession = false;
+
+      if (req.cookies?.accessToken) {
         const decoded = CryptoService.verifyAccessToken(req.cookies.accessToken);
         if (decoded && decoded.userId === attempt.userId) {
-          isAuthorized = true;
+          isAuthorizedSession = true;
         }
       }
 
-      if (!isAuthorized) {
-        return res.status(401).json({ error: 'Unauthorized MFA resolution attempt.' });
+      if (!isAuthorizedSession && req.cookies?.refreshToken) {
+        const hashedRefresh = CryptoService.hashToken(req.cookies.refreshToken);
+        const tokenRecord = await QueryService.getRefreshToken(hashedRefresh);
+        if (tokenRecord && tokenRecord.user_id === attempt.userId && new Date(tokenRecord.expires_at) > new Date()) {
+          isAuthorizedSession = true;
+        }
+      }
+
+      if (!isAuthorizedSession) {
+        return res.status(401).json({ error: 'You must be logged in on this device to approve a sign-in request.' });
       }
 
       const isApproved = decision !== 'DENY' && String(selectedCode) === String(attempt.challengeCode);
@@ -865,11 +877,64 @@ export class AuthController {
       const attempt = JSON.parse(raw);
       const emailOtp = crypto.randomInt(100000, 999999).toString();
       attempt.fallbackOtp = emailOtp;
+      attempt.status = 'PENDING'
 
       await redisClient.setEx(`mfa:attempt:${attemptId}`, 180, JSON.stringify(attempt));
+      
+      // Dismiss the push notification while the user is verifying via Email OTP
+      await PushService.sendToUser(attempt.userId, {
+        type: 'MFA_RESOLVED',
+        title: '',
+        body: '',
+        tag: `mfa-${attemptId}`
+      });
+
       await EmailService.sendOtpEmail(attempt.email, emailOtp);
 
       return res.json({ success: true, message: 'Verification code sent to your email.' });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  // 4B. Re-dispatch Push Notification When User Clicks "Back to Number Match"
+  static async resendMfaPush(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { attemptId } = req.body;
+      const raw = await redisClient.get(`mfa:attempt:${attemptId}`);
+      if (!raw) return res.status(404).json({ error: 'Challenge expired. Please sign in again.' });
+
+      const attempt = JSON.parse(raw);
+      attempt.status = 'PENDING';
+
+      await redisClient.setEx(`mfa:attempt:${attemptId}`, 180, JSON.stringify(attempt));
+      await redisClient.setEx(`mfa:user_active:${attempt.userId}`, 180, attemptId);
+
+      const bannerOptions: string[] = attempt.bannerOptions || [attempt.challengeCode, attempt.options[0]];
+
+      await PushService.sendToUser(attempt.userId, {
+        type: 'MFA_CHALLENGE',
+        title: 'Sign-In Request',
+        body: `${attempt.device} • ${attempt.location} (${attempt.ip}). Select matching number to approve.`,
+        tag: `mfa-${attemptId}`,
+        vibrate: [200, 100, 200],
+        url: `/app?mfaAttempt=${attemptId}`,
+        actions: bannerOptions.map((num: string) => ({
+          action: `mfa_pick_${num}`,
+          title: `Approve: ${num}`
+        })),
+        mfa: {
+          attemptId: attempt.attemptId,
+          actionToken: attempt.actionToken,
+          resolveUrl: `/api/v1/auth/mfa/resolve`,
+          options: attempt.options,
+          device: attempt.device,
+          location: attempt.location,
+          ip: attempt.ip
+        }
+      });
+
+      return res.json({ success: true });
     } catch (err) {
       next(err);
     }
@@ -1162,20 +1227,20 @@ export class AuthController {
       }
 
       // 1. Verify OTP first
-    const isValidOtp = await OtpService.verifyOtp(email, 'EMAIL', otp);
-    if (!isValidOtp) {
-      return res.status(400).json({ error: 'Invalid or expired OTP code.' });
-    }
+      const isValidOtp = await OtpService.verifyOtp(email, 'EMAIL', otp);
+      if (!isValidOtp) {
+        return res.status(400).json({ error: 'Invalid or expired OTP code.' });
+      }
 
-      // Hashes the new password using Argon2
       const passwordHash = await CryptoService.hashPassword(newPassword);
-
-      // Updates the user's password in the database
       const updatedUser = await QueryService.updateUserPassword(email, passwordHash);
 
       if (!updatedUser) {
         return res.status(404).json({ error: 'User not found' });
       }
+
+      // Terminate all existing sessions globally after a password reset
+      await QueryService.revokeAllUserTokensGlobally(updatedUser.id);
 
       return res.json({ success: true, message: 'Password has been reset successfully.' });
     } catch (err) {
@@ -1249,9 +1314,9 @@ export class AuthController {
       // 2. THE OAUTH TOKEN THEFT TRAP
       // ==========================================
       if (tokenRecord.is_revoked) {
-        // Check 10-second grace window for concurrent multi-tab or SDK requests
+        // Check 30-second grace window for concurrent multi-tab or SDK requests
         const gracePayloadStr = await redisClient.get(`grace:refresh:${hashedRefresh}`);
-        const isSameContext = isSdkRequest || (tokenRecord.ip_address === currentIp && tokenRecord.user_agent === currentAgent);
+        const isSameContext = isSdkRequest || (tokenRecord.user_agent === currentAgent);
 
         if (gracePayloadStr && isSameContext) {
           const gracePayload = JSON.parse(gracePayloadStr);
@@ -1276,10 +1341,10 @@ export class AuthController {
           if (userEmail) {
             // Push Notification
             await PushService.sendToUser(tokenRecord.user_id, {
-              title: '🚨 Session Compromised',
-              body: `Token reuse detected from ${currentDevice.displayName}. All sessions have been terminated.`,
+              title: 'Security Alert: Session Revoked',
+              body: `Suspicious token activity from ${currentDevice.displayName} (${currentIp}). All sessions terminated.`,
               tag: 'security-compromise',
-              vibrate: [500, 200, 500, 200, 500],
+              vibrate: [400, 150, 400],
               url: '/login'
             });
 
@@ -1360,10 +1425,10 @@ export class AuthController {
               const userEmail = await QueryService.getUserEmailById(tokenRecord.user_id);
               if (userEmail) {
                 await PushService.sendToUser(tokenRecord.user_id, {
-                  title: '🚨 Critical Security Alert',
-                  body: `Suspicious login from ${currentLocation.displayLocation} on ${currentDevice.displayName}. Session terminated.`,
+                  title: 'Unrecognized Location Blocked',
+                  body: `Sign-in blocked from ${currentLocation.displayLocation} (${currentDevice.displayName}). Session terminated.`,
                   tag: 'security-alert',
-                  vibrate: [500, 200, 500, 200, 500],
+                  vibrate: [400, 150, 400],
                   url: '/login',
                   actions: [{ action: 'reset_pwd', title: 'Reset Password' }],
                   actionUrls: { 'reset_pwd': '/forgot-password' }
@@ -1424,7 +1489,7 @@ export class AuthController {
         };
 
         // Inside refreshToken, right before await QueryService.revokeRefreshToken(hashedRefresh):
-        await redisClient.setEx(`grace:refresh:${hashedRefresh}`, 10, JSON.stringify(superAdminResponse));
+        await redisClient.setEx(`grace:refresh:${hashedRefresh}`, 30, JSON.stringify(superAdminResponse));
         await QueryService.revokeRefreshToken(hashedRefresh);
         await QueryService.saveRefreshToken(user.id, 'SYSTEM', newHashedRefresh, newExpiry, RequestUtil.getIp(req), RequestUtil.getAgent(req));
         
@@ -1490,7 +1555,7 @@ export class AuthController {
       };
 
       // Cache new tokens in 10s grace key BEFORE revoking old token
-      await redisClient.setEx(`grace:refresh:${hashedRefresh}`, 10, JSON.stringify(workspaceResponse));
+      await redisClient.setEx(`grace:refresh:${hashedRefresh}`, 30, JSON.stringify(workspaceResponse));
       await QueryService.revokeRefreshToken(hashedRefresh);
       await QueryService.saveRefreshToken(
         user.id, 
@@ -1715,6 +1780,7 @@ export class AuthController {
   static async logout(req: Request, res: Response, next: NextFunction) {
     try {
       const refreshToken = req.cookies?.refreshToken || req.body?.refreshToken;
+      const pushEndpoint = req.body?.endpoint;
 
       if (refreshToken) {
         // Hashes the token exactly as it is stored in the database
@@ -1722,6 +1788,11 @@ export class AuthController {
         
         // Mark it as revoked so it drops off the Active Sessions UI
         await QueryService.deleteRefreshTokenByHash(hashedRefresh);
+      }
+
+      // Unlink push notifications for this device when the user logs out
+      if (pushEndpoint) {
+        await QueryService.deletePushSubscription(pushEndpoint);
       }
 
       clearAuthCookies(res);

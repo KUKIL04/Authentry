@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAdminAuth } from '../../hooks/useAdminAuth';
-import { adminApiClient } from '../../api/client';
+import { publicAdminClient } from '../../api/client';
 import { ShieldAlert, Loader2, Lock, Mail, Terminal, Network, Database } from 'lucide-react';
 
 export default function AdminLogin() {
@@ -19,11 +19,9 @@ export default function AdminLogin() {
 
     try {
       // Point directly to the secure backend terminal route
-      const response = await adminApiClient.post('/auth/superadmin/login', { email, password });
+      const response = await publicAdminClient.post('/auth/superadmin/login', { email, password });
       
-      const { accessToken, refreshToken, user } = response.data;
-
-      login(accessToken, refreshToken, user);
+      login(response.data.user);
       navigate('/dashboard', { replace: true });
     } catch (err: any) {
       setError(err.response?.data?.error || err.message || 'Authentication sequence failed.');

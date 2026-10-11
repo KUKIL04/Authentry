@@ -26,10 +26,12 @@ self.addEventListener('push', function(event) {
   if (data.type === 'MFA_CHALLENGE' && data.mfa) {
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function(clientList) {
       clientList.forEach(function(client) {
-        client.postMessage({
-          type: 'MFA_CHALLENGE_RECEIVED',
-          challenge: data.mfa
-        });
+        if (!client.url.includes('/login')) {
+          client.postMessage({
+            type: 'MFA_CHALLENGE_RECEIVED',
+            challenge: data.mfa
+          });
+        }
       });
     });
   }
@@ -70,6 +72,7 @@ self.addEventListener('notificationclick', function(event) {
     event.waitUntil(
       fetch(mfa.resolveUrl, {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           attemptId: mfa.attemptId,
@@ -97,7 +100,11 @@ self.addEventListener('notificationclick', function(event) {
       for (let i = 0; i < clientList.length; i++) {
         let client = clientList[i];
         // If the URL matches the target (or is the app root), focus it and navigate
-        if (client.url.includes(self.location.origin) && 'focus' in client) {
+        if (
+          client.url.includes(self.location.origin) && 
+          !client.url.includes('/login') && 
+          'focus' in client
+        ) {
           client.navigate(targetUrl);
           return client.focus();
         }
