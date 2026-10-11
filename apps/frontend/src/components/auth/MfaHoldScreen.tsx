@@ -26,15 +26,21 @@ export const MfaHoldScreen: React.FC<MfaHoldScreenProps> = ({
   const [isVerifyingOtp, setIsVerifyingOtp] = useState(false);
   const [fallbackError, setFallbackError] = useState('');
 
+  // Keep latest callbacks in refs to prevent interval teardown on parent re-render
+  const callbacksRef = React.useRef({ onApproved, onDenied, onCancel });
+  useEffect(() => {
+    callbacksRef.current = { onApproved, onDenied, onCancel };
+  }, [onApproved, onDenied, onCancel]);
+
   // 1. Countdown Timer
   useEffect(() => {
     if (secondsLeft <= 0) {
-      onCancel();
+      callbacksRef.current.onCancel();
       return;
     }
     const timer = setInterval(() => setSecondsLeft(prev => prev - 1), 1000);
     return () => clearInterval(timer);
-  }, [secondsLeft, onCancel]);
+  }, [secondsLeft]);
 
   // 2. 2-Second Polling Loop for Push Approval / Denial
   useEffect(() => {
@@ -42,10 +48,9 @@ export const MfaHoldScreen: React.FC<MfaHoldScreenProps> = ({
     const pollInterval = setInterval(async () => {
       try {
         const res = await AuthAPI.getMfaStatus(attemptId);
-        // If approved, backend returns user or requiresTenantSelection or redirectUrl
         if (res.user || res.requiresTenantSelection || res.redirectUrl) {
           clearInterval(pollInterval);
-          onApproved(res);
+          callbacksRef.current.onApproved(res);
         }
       } catch (err: any) {
         const status = err.response?.status;
@@ -53,28 +58,38 @@ export const MfaHoldScreen: React.FC<MfaHoldScreenProps> = ({
 
         if (status === 403 && data?.status === 'DENIED') {
           clearInterval(pollInterval);
-          onDenied(data.error || 'Login attempt was denied from your registered device.');
+          callbacksRef.current.onDenied(data.error || 'Login attempt was denied from your registered device.');
         } else if (status === 404) {
           clearInterval(pollInterval);
-          onCancel();
+          callbacksRef.current.onCancel();
         }
       }
     }, 2000);
 
     return () => clearInterval(pollInterval);
-  }, [attemptId, mode, onApproved, onDenied, onCancel]);
+  }, [attemptId, mode]);
 
   const handleSwitchToEmailOtp = async () => {
     setFallbackError('');
     setIsSendingOtp(true);
+    setMode('EMAIL_OTP'); // Stop polling immediately before network wait
     try {
       await AuthAPI.sendMfaEmailFallback(attemptId);
-      setMode('EMAIL_OTP');
     } catch (err: any) {
       setFallbackError(err.response?.data?.error || 'Failed to dispatch fallback code.');
     } finally {
       setIsSendingOtp(false);
     }
+  };
+
+  const handleBackToNumberMatch = async () => {
+    setFallbackError('');
+    try {
+      await AuthAPI.resendMfaPush(attemptId);
+    } catch {
+      // Ignore error if push fails
+    }
+    setMode('NUMBER_MATCH');
   };
 
   const handleVerifyEmailOtp = async (e: React.FormEvent) => {
@@ -216,7 +231,7 @@ export const MfaHoldScreen: React.FC<MfaHoldScreenProps> = ({
 
           <button
             type="button"
-            onClick={() => { setMode('NUMBER_MATCH'); setFallbackError(''); }}
+            onClick={handleBackToNumberMatch}
             className="w-full py-2 text-slate-500 hover:text-slate-800 font-bold text-xs uppercase tracking-widest transition-colors flex items-center justify-center space-x-1.5"
           >
             <ArrowLeft className="w-3.5 h-3.5" />

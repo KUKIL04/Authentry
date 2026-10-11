@@ -29,9 +29,9 @@ export class RequestUtil {
     const forwarded = req.headers['x-forwarded-for'];
     const realIp = req.headers['x-real-ip'];
 
-    let ip = (cfIp || forwarded || realIp || req.socket.remoteAddress || req.ip || '127.0.0.1') as string;
+    let ip = (forwarded || realIp || cfIp || req.socket.remoteAddress || req.ip || '127.0.0.1') as string;
 
-    if (ip.includes(',')) {
+    if (typeof ip === 'string' && ip.includes(',')) {
       ip = ip.split(',')[0].trim();
     }
 

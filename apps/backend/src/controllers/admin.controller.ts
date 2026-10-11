@@ -228,27 +228,21 @@ export class AdminController {
       }
 
       if (status === 'SUSPENDED') {
-        // 15-minute ban to instantly kill live Access Tokens at the API edge
         await redisClient.setEx(`bl:tenant:${tenantId}:${id}`, 900, 'revoked');
-        // We intentionally do NOT revoke refresh tokens in the DB here! 
-        // This allows for seamless account restoration.
 
-        // Sends a push notification to the user
         await PushService.sendToUser(id, {
-          title: 'Workspace Access Revoked 🛑',
-          body: 'Your privileges for this environment have been temporarily suspended. Please contact HR.',
+          title: 'Workspace Access Suspended',
+          body: 'Your administrator has suspended your access to this workspace.',
           tag: 'workspace-status',
           vibrate: [300, 100, 300],
           url: '/login'
         });
       } else if (status === 'ACTIVE') {
-        // If restored, we lift the Redis block instantly
         await redisClient.del(`bl:tenant:${tenantId}:${id}`);
         
-        // Sends a push notification to the user
         await PushService.sendToUser(id, {
-          title: 'Access Restored 🔓',
-          body: 'Your workspace privileges have been reinstated.',
+          title: 'Workspace Access Restored',
+          body: 'Your workspace privileges have been reinstated. You may now sign in.',
           tag: 'workspace-status',
           vibrate: [200, 100, 200],
           url: '/app'
@@ -319,12 +313,12 @@ export class AdminController {
 
       // Send Push Notification to the user
       await PushService.sendToUser(targetUserId, {
-        title: 'Access Granted ✅',
-        body: 'Your workspace access has been approved by your administrator. You can now launch your applications.',
+        title: 'Workspace Access Approved',
+        body: 'Your account is now active. Tap to open your workspace launchpad.',
         tag: 'workspace-status',
-        vibrate: [200, 100, 200], // Happy double-tap
+        vibrate: [200, 100, 200],
         url: '/app',
-        actions: [{ action: 'launch', title: 'Launch Workspace' }],
+        actions: [{ action: 'launch', title: 'Open Workspace' }],
         actionUrls: { 'launch': '/app' }
       });
 
@@ -671,15 +665,37 @@ export class AdminController {
       // Revokes the long-lived refresh token in PostgreSQL
       const revokedSession = await QueryService.revokeSession(tenantId, tokenId as string);
 
-      // Blacklists the user in Redis to instantly kill any active Access Tokens
-      if (revokedSession && revokedSession.user_id) {
-        // Set expiry to 15 minutes (900 seconds) so Redis cleans up automatically
-        await redisClient.setEx(`bl:tenant:${tenantId}:${revokedSession.user_id}`, 900, 'revoked');
+      if (!revokedSession) {
+        return res.status(404).json({ error: 'Active session not found or already terminated.' });
       }
+
+      // Blacklists the user in Redis to instantly kill any active Access Tokens
+      if (revokedSession.user_id) {
+        await redisClient.setEx(`bl:tenant:${tenantId}:${revokedSession.user_id}`, 900, 'revoked');
+
+        const deviceMeta = RequestUtil.getDevice(revokedSession.user_agent || '');
+
+        await PushService.sendToUser(revokedSession.user_id, {
+          title: 'Session Terminated',
+          body: `An administrator signed out your session on ${deviceMeta.displayName}.`,
+          tag: `session-revoked-${tokenId}`,
+          vibrate: [300, 100, 300],
+          url: '/login'
+        });
+      }
+
+      await QueryService.logEvent(
+        tenantId,
+        adminId || null,
+        'SESSION_TERMINATED_BY_ADMIN',
+        RequestUtil.getIp(req),
+        RequestUtil.getAgent(req),
+        { targetUserId: revokedSession.user_id, tokenId }
+      );
 
       // --- DISPATCH EVENT (Priority 1 - Critical Security)
       await EventDispatcherService.dispatch(tenantId, 'user.session.revoked', {
-        userId: revokedSession?.user_id,
+        userId: revokedSession.user_id,
         tokenId,
         reason: 'admin_revoked'
       }, 1);
@@ -716,12 +732,12 @@ export class AdminController {
 
       // Sends a push notification to the user to alert them of the forced reset
       await PushService.sendToUser(userId, {
-        title: 'Mandatory Password Reset ⚠️',
-        body: 'Your administrator has invalidated your current password for security reasons.',
+        title: 'Password Reset Required',
+        body: 'An administrator reset your credentials. Active sessions have been signed out.',
         tag: 'security-alert',
-        vibrate: [400, 100, 400],
+        vibrate: [300, 100, 300],
         url: '/login',
-        actions: [{ action: 'recover', title: 'Setup New Password' }],
+        actions: [{ action: 'recover', title: 'Reset Password' }],
         actionUrls: { 'recover': '/forgot-password' }
       });
 

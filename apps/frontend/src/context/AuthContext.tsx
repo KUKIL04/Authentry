@@ -128,7 +128,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const logout = async () => {
-    try { await AuthAPI.logout(); } catch (err) {}
+    try {
+      let endpoint: string | undefined;
+      if ('serviceWorker' in navigator && 'PushManager' in window) {
+        const registration = await navigator.serviceWorker.getRegistration();
+        const sub = await registration?.pushManager.getSubscription();
+        endpoint = sub?.endpoint;
+      }
+      await AuthAPI.logout(endpoint);
+    } catch (err) {}
     localStorage.removeItem('user');
     localStorage.removeItem('tenantSettings');
     setUser(null);

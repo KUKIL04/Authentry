@@ -92,8 +92,8 @@ export const AuthAPI = {
     return response.data;
   },
 
-  logout: async () => {
-    const response = await publicClient.post('/auth/logout', { });
+  logout: async (endpoint?: string) => {
+    const response = await publicClient.post('/auth/logout', { endpoint });
     return response.data;
   },
 
@@ -110,6 +110,11 @@ export const AuthAPI = {
 
   resolveMfaChallenge: async (attemptId: string, selectedCode?: string, decision: 'NUMBER_PICK' | 'DENY' = 'NUMBER_PICK') => {
     const response = await apiClient.post('/auth/mfa/resolve', { attemptId, selectedCode, decision });
+    return response.data;
+  },
+
+  resendMfaPush: async (attemptId: string) => {
+    const response = await publicClient.post('/auth/mfa/resend-push', { attemptId });
     return response.data;
   },
 

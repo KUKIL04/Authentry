@@ -30,16 +30,21 @@ export const usePushNotifications = () => {
   useEffect(() => {
     if ('serviceWorker' in navigator && 'PushManager' in window) {
       setIsSupported(true);
-
-      // Register the service worker silently on mount
-      navigator.serviceWorker.register('/sw.js').catch(console.error);
-
-      // Check existing subscription
-      navigator.serviceWorker.ready.then((reg) => {
-        reg.pushManager.getSubscription().then((sub) => {
-          setIsSubscribed(Boolean(sub));
-        });
-      });
+      navigator.serviceWorker.register('/sw.js')
+        .then(async (registration) => {
+          const sub = await registration.pushManager.getSubscription();
+          if (sub) {
+            setIsSubscribed(true);
+            // Automatically re-bind this device's push subscription to the logged-in user in PostgreSQL
+            const parser = new UAParser();
+            const deviceName = `${parser.getBrowser().name || 'Browser'} on ${parser.getOS().name || 'OS'}`;
+            apiClient.post('/push/subscribe', {
+              subscription: sub.toJSON(),
+              deviceName
+            }).catch(() => {});
+          }
+        })
+        .catch(err => console.error('Service Worker registration failed:', err));
     }
   }, []);
 

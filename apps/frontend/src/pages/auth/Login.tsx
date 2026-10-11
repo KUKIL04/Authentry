@@ -248,8 +248,9 @@ export default function Login() {
               initialExpiresIn={mfaChallenge.expiresIn}
               onApproved={handleLoginSuccess}
               onDenied={(msg) => {
-                setSecurityMessage(msg);
-                setStep('TOKEN_THEFT');
+                setMfaChallenge(null);
+                setError(msg);
+                setStep('CREDENTIALS');
               }}
               onCancel={() => {
                 setMfaChallenge(null);

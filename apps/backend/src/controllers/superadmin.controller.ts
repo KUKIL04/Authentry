@@ -2,6 +2,7 @@ import { Response, NextFunction } from 'express';
 import { AuthenticatedRequest } from '../middlewares/auth.js';
 import { QueryService } from '../services/query.service.js';
 import { EmailService } from '../services/email.service.js';
+import { PushService } from '../services/push.service.js';
 import { EventDispatcherService } from '../services/event-dispatcher.service.js';
 import { CryptoService } from '../services/crypto.service.js';
 import { redisClient } from '../db/redis.js';
@@ -430,11 +431,28 @@ export class SuperAdminController {
 
       try {
         const admins = await QueryService.getTenantAdmins(tenantId);
+        const isFrozen = status === 'FROZEN';
+
         for (const admin of admins) {
           await EmailService.sendTenantStatusNotification(admin.email, tenant.company_name, status);
+
+          // Resolve admin userId (uses admin.id if returned by query, otherwise looks up by email)
+          const adminUserId = admin.id || admin.user_id || (await QueryService.getGlobalUserByEmail(admin.email))?.id;
+
+          if (adminUserId) {
+            await PushService.sendToUser(adminUserId, {
+              title: isFrozen ? 'Workspace Suspended' : 'Workspace Restored',
+              body: isFrozen
+                ? `${tenant.company_name} has been suspended by Platform Administration. All active sessions were terminated.`
+                : `${tenant.company_name} network access has been restored. Your team may now sign in.`,
+              tag: `tenant-status-${tenantId}`,
+              vibrate: isFrozen ? [400, 150, 400] : [200, 100, 200],
+              url: isFrozen ? '/login' : '/app'
+            });
+          }
         }
-      } catch (emailErr) {
-        console.error('Non-fatal: Failed to notify admins of workspace freeze', emailErr);
+      } catch (notifyErr) {
+        console.error('Non-fatal: Failed to notify admins of workspace status change', notifyErr);
       }
 
       return res.json({ 
@@ -524,8 +542,18 @@ export class SuperAdminController {
         if (targetEmail) {
           await EmailService.sendGlobalBlacklistNotification(targetEmail, isBlacklisted);
         }
-      } catch (emailErr) {
-        console.error('Non-fatal: Failed to send global blacklist notification', emailErr);
+        
+        await PushService.sendToUser(userId, {
+          title: isBlacklisted ? 'Global Identity Suspended' : 'Global Identity Restored',
+          body: isBlacklisted
+            ? 'Your platform access has been revoked across all workspaces by Platform Administration.'
+            : 'Your global platform access has been reinstated. You may now sign in to your workspaces.',
+          tag: 'global-security-status',
+          vibrate: isBlacklisted ? [400, 150, 400] : [200, 100, 200],
+          url: '/login'
+        });
+      } catch (notifyErr) {
+        console.error('Non-fatal: Failed to send global blacklist notification', notifyErr);
       }
 
       return res.json({ 
