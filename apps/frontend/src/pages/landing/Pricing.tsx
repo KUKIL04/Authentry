@@ -196,13 +196,12 @@ export default function Pricing() {
           <div className="h-1 w-12 rounded-full bg-gamboge-500 mx-auto mt-4 shadow-sm"></div>
         </div>
 
-        <div className="embossed-card overflow-hidden rounded-3xl">
+        <div className="embossed-card overflow-hidden rounded-3xl p-3">
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse min-w-[700px]">
               <thead>
                 <tr className="border-b border-slate-300/50 bg-slate-50/50">
                   <th className="py-5 px-6 text-xs font-bold text-slate-500 uppercase tracking-widest w-2/6">Feature Module</th>
-                  <th className="py-5 px-6 text-xs font-bold text-slate-500 uppercase tracking-widest w-1/6">Required Tier</th>
                   <th className="py-5 px-6 text-xs font-bold text-slate-500 uppercase tracking-widest text-center w-1/6">Free Workspace</th>
                   <th className="py-5 px-6 text-xs font-bold text-gamboge-600 uppercase tracking-widest text-center w-1/6">Premium Workspace</th>
                   <th className="py-5 px-6 text-xs font-bold text-slate-800 uppercase tracking-widest text-center w-1/6">Enterprise Workspace</th>
@@ -214,12 +213,6 @@ export default function Pricing() {
                     <td className="py-4 px-6">
                       <div className="font-extrabold text-slate-800 text-sm">{feature.name}</div>
                       <div className="text-[11px] font-mono font-bold text-slate-400 mt-0.5">{feature.key}</div>
-                    </td>
-
-                    <td className="py-4 px-6">
-                      <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-[10px] font-extrabold uppercase tracking-wider bg-white border border-slate-200 text-slate-600 shadow-sm">
-                        {feature.requiredTier}
-                      </span>
                     </td>
                     
                     <td className="py-4 px-6 text-center">
@@ -269,7 +262,7 @@ export default function Pricing() {
           </div>
           <a 
             href="mailto:spheri20verse04@gmail.com" 
-            className="shine-btn px-6 py-3.5 rounded-2xl text-white text-xs font-bold uppercase tracking-widest shadow-md flex items-center shrink-0"
+            className="shine-btn px-6 py-3.5 rounded-2xl text-white text-xs font-bold tracking-widest shadow-md flex items-center shrink-0"
           >
             <Mail className="w-4 h-4 mr-2" /> spheri20verse04@gmail.com
           </a>
