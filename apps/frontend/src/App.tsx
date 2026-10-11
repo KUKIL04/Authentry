@@ -6,7 +6,7 @@ import { PublicRoute } from './components/layout/PublicRoute';
 // Public Landing Pages
 import Home from './pages/landing/Home';
 import Pricing from './pages/landing/Pricing';
-import Developers from './pages/landing/Developers';
+import Controls from './pages/landing/Controls';
 import PrivacyPolicy from './pages/landing/legal/PrivacyPolicy';
 import TermsOfService from './pages/landing/legal/TermsOfService';
 
@@ -38,7 +38,7 @@ export default function App() {
         {/* --- PUBLIC MARKETING ECOSYSTEM --- */}
         <Route path="/" element={<Home />} />
         <Route path="/pricing" element={<Pricing />} />
-        <Route path="/developers" element={<Developers />} />
+        <Route path="/controls" element={<Controls />} />
         <Route path="/privacy-policy" element={<PrivacyPolicy />} />
         <Route path="/terms" element={<TermsOfService />} />
 

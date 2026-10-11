@@ -1,7 +1,7 @@
 // apps/frontend/src/pages/landing/legal/TermsOfService.tsx
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { ShieldCheck, ArrowLeft } from 'lucide-react';
+import { ShieldCheck, ArrowLeft, Mail } from 'lucide-react';
 
 export default function TermsOfService() {
   return (
@@ -15,7 +15,7 @@ export default function TermsOfService() {
             </div>
             <span className="text-sm font-bold tracking-widest uppercase text-slate-500">Back to Home</span>
           </Link>
-          <div className="flex items-center space-x-2 opacity-50">
+          <div className="flex items-center space-x-2 opacity-60">
             <ShieldCheck className="w-5 h-5 text-gamboge-600" />
             <span className="font-extrabold tracking-tight uppercase text-sm">ManavSutra</span>
           </div>
@@ -25,36 +25,42 @@ export default function TermsOfService() {
       <div className="max-w-4xl mx-auto px-6 pt-16">
         <div className="mb-10 text-center">
           <h1 className="text-3xl font-black text-slate-800 tracking-tight uppercase mb-4">Terms of Service</h1>
-          <p className="text-sm font-bold text-slate-500 tracking-widest uppercase">Effective Date: July 2026</p>
+          <p className="text-sm font-bold text-slate-500 tracking-widest uppercase">Effective Date: October 2026</p>
         </div>
 
         <div className="inner-depth p-8 md:p-12 space-y-8 bg-slate-50/50 text-slate-600 font-medium leading-relaxed rounded-[2rem]">
           <section>
-            <h2 className="text-lg font-extrabold text-slate-800 mb-4 uppercase tracking-wide">1. Acceptance of Terms</h2>
+            <h2 className="text-lg font-extrabold text-slate-800 mb-4 uppercase tracking-wide">1. Acceptance of Governance Terms</h2>
             <p className="mb-4">
-              By registering an organizational workspace on the ManavSutra platform ("Service"), you agree to abide by these Terms of Service. If you are accepting these terms on behalf of a corporation or enterprise, you represent that you hold the legal authority to bind that entity.
+              By provisioning or accessing an organizational workspace on the ManavSutra platform ("Service"), you agree to abide by these Terms of Service. If you are accepting these terms on behalf of a sub-company or corporate entity, you represent that you hold the authority to bind that organization.
             </p>
           </section>
 
           <section>
-            <h2 className="text-lg font-extrabold text-slate-800 mb-4 uppercase tracking-wide">2. Fair Use & API Limits</h2>
+            <h2 className="text-lg font-extrabold text-slate-800 mb-4 uppercase tracking-wide">2. Subscription Tiers & Resource Quotas</h2>
             <p className="mb-4">
-              Access to ManavSutra's Node SDK and REST APIs is subject to the usage limits dictated by your active Subscription Tier (Free, Premium, or Enterprise). Engaging in deliberate circumvention of API rate limits or reverse engineering the cryptographic payload verification constitutes an immediate breach of these terms.
+              Workspace capabilities—including Monthly Active Users (MAU), monthly API request allowances, Custom RBAC Engine access (`advancedRbac`), and White-label Custom Branding (`customTheme`)—are governed by your active Subscription Tier (`FREE_TIER`, `PREMIUM_TIER`, or `ENTERPRISE`). Access to enterprise software suites is strictly determined by parent-level license allocations.
             </p>
           </section>
 
           <section>
-            <h2 className="text-lg font-extrabold text-slate-800 mb-4 uppercase tracking-wide">3. Administrator Responsibilities</h2>
+            <h2 className="text-lg font-extrabold text-slate-800 mb-4 uppercase tracking-wide">3. Workspace Administrator Responsibilities</h2>
             <p className="mb-4">
-              The master administrator ("Host Admin") is solely responsible for managing Role-Based Access Control (RBAC) grants and maintaining the security of generated API Keys. ManavSutra is not liable for data breaches occurring within external applications resulting from leaked API credentials or misconfigured user permissions.
+              Workspace administrators are responsible for verifying personnel in the Waiting Room, maintaining accurate Role-Based Access Control (RBAC) assignments and module overrides, and promptly revoking access or active sessions for departing personnel.
             </p>
           </section>
 
           <section>
-            <h2 className="text-lg font-extrabold text-slate-800 mb-4 uppercase tracking-wide">4. Service Uptime & Liability</h2>
-            <p>
-              While we strive for 99.99% availability, ManavSutra provides the service "as is." In no event shall ManavSutra be held liable for indirect, incidental, or consequential damages resulting from a service outage, including but not limited to lost profits or business interruptions inside external applications relying on our Identity Provider.
+            <h2 className="text-lg font-extrabold text-slate-800 mb-4 uppercase tracking-wide">4. Platform Support & Contact</h2>
+            <p className="mb-4">
+              ManavSutra reserves the right to freeze workspaces or blacklist global identities that engage in unauthorized cross-tenant access attempts or security violations. For billing inquiries, tier upgrades, or technical support, contact:
             </p>
+            <a 
+              href="mailto:spheri20verse04@gmail.com" 
+              className="inline-flex items-center text-sm font-extrabold text-gamboge-600 hover:text-gamboge-700"
+            >
+              <Mail className="w-4 h-4 mr-2" /> spheri20verse04@gmail.com
+            </a>
           </section>
         </div>
       </div>
