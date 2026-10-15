@@ -63,7 +63,15 @@ export class AuthController {
     }
   }
 
-  static logout(req, res) {
+  static async logout(req, res) {
+    const refreshToken = req.cookies?.tenant_refresh;
+    if (refreshToken) {
+      try {
+        await authentry.auth.logout(refreshToken);
+      } catch (e) {
+        console.warn('Non-fatal: Failed to revoke token on IDP during logout:', e.message);
+      }
+    }
     res.clearCookie('tenant_session');
     res.clearCookie('tenant_refresh');
     res.redirect('/');

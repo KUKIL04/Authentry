@@ -100,6 +100,11 @@ export class AuthModule {
     return data;
   }
 
+  async logout(refreshToken: string) {
+    const response = await this.http.client.post('/auth/logout', { refreshToken });
+    return response.data;
+  }
+
   async verifySession(token: string): Promise<any> {
     const getKey = (header: jwt.JwtHeader, callback: jwt.SigningKeyCallback) => {
       this.jwksClient.getSigningKey(header.kid, (err, key) => {

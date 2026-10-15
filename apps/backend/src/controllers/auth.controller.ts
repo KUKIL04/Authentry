@@ -213,23 +213,13 @@ export class AuthController {
     setAuthCookies(res, accessToken, rawRefreshToken);
 
     if (redirectUri) {
-      const clientRefreshToken = CryptoService.generateRandomToken();
-      const clientHashedRefresh = CryptoService.hashToken(clientRefreshToken);
-      await QueryService.saveRefreshToken(
-        userPayload.id, 
-        userPayload.tenantId, 
-        clientHashedRefresh, 
-        expiry, 
-        RequestUtil.getIp(req), 
-        RequestUtil.getAgent(req)
-      );
-
       const authCode = crypto.randomBytes(32).toString('hex');
       const codePayload = JSON.stringify({ 
         accessToken, 
-        refreshToken: clientRefreshToken, 
         user: userPayload, 
-        tenantId: targetRecord.tenant_id 
+        tenantId: userPayload.tenantId,
+        ip: RequestUtil.getIp(req),
+        userAgent: RequestUtil.getAgent(req)
       });
       await redisClient.setEx(`auth_code:${authCode}`, 60, codePayload);
 
@@ -614,23 +604,13 @@ export class AuthController {
           });
         }
 
-        const clientRefreshToken = CryptoService.generateRandomToken();
-        const clientHashedRefresh = CryptoService.hashToken(clientRefreshToken);
-        await QueryService.saveRefreshToken(
-          userPayload.id, 
-          userPayload.tenantId, 
-          clientHashedRefresh, 
-          expiry, 
-          RequestUtil.getIp(req), 
-          RequestUtil.getAgent(req)
-        );
-
         const authCode = crypto.randomBytes(32).toString('hex');
         const codePayload = JSON.stringify({ 
           accessToken, 
-          refreshToken: clientRefreshToken, 
           user: userPayload, 
-          tenantId: user.tenant_id 
+          tenantId: userPayload.tenantId,
+          ip: RequestUtil.getIp(req),
+          userAgent: RequestUtil.getAgent(req)
         });
         await redisClient.setEx(`auth_code:${authCode}`, 60, codePayload);
 
@@ -1005,9 +985,6 @@ export class AuthController {
       const data = JSON.parse(dataStr);
       const targetTenantId = data.tenantId;
 
-      // ==========================================
-      // CRITICAL SECURITY: THE MATRIX GATEKEEPER
-      // ==========================================
       // Ensure the software suite asking for the tokens is actually licensed to this company!
       const isAllocated = await QueryService.verifyAppAllocation(appId!, targetTenantId);
       
@@ -1019,6 +996,24 @@ export class AuthController {
       // Burns the code immediately so it can never be reused (Replay Attack Prevention)
       await redisClient.del(codeKey);
 
+      // Mint the Client App Refresh Token NOW (and auto-replace any previous launch token for this App + Browser)
+      const clientRefreshToken = CryptoService.generateRandomToken();
+      const clientHashedRefresh = CryptoService.hashToken(clientRefreshToken);
+      const expiry = new Date();
+      expiry.setDate(expiry.getDate() + 7);
+
+      const clientIp = data.ip || RequestUtil.getIp(req);
+      const scopedClientAgent = `${data.userAgent || 'Browser'} [App:${appId}]`;
+
+      await QueryService.saveRefreshToken(
+        data.user.id,
+        targetTenantId,
+        clientHashedRefresh,
+        expiry,
+        clientIp,
+        scopedClientAgent
+      );
+      
       // Returns the tokens to the tenant's server!
       return res.json({
         accessToken: data.accessToken,
@@ -1632,19 +1627,6 @@ export class AuthController {
         isProfileEnforced
       });
 
-      const rawRefreshToken = CryptoService.generateRandomToken();
-      const hashedRefresh = CryptoService.hashToken(rawRefreshToken);
-      const expiry = new Date();
-      expiry.setDate(expiry.getDate() + 7);
-
-      await QueryService.saveRefreshToken(
-        userRecord.id, 
-        userRecord.tenant_id, 
-        hashedRefresh, expiry, 
-        RequestUtil.getIp(req), 
-        RequestUtil.getAgent(req)
-      );
-      
       const userPayload = {
         id: userRecord.id,
         tenantId: userRecord.tenant_id,
@@ -1662,13 +1644,12 @@ export class AuthController {
 
       // Generates a 60-second secure auth code
       const authCode = crypto.randomBytes(32).toString('hex');
-      
-      // VAULT THE FULL PAYLOAD: Matches exchangeCode expectations perfectly
       const codePayload = JSON.stringify({ 
         accessToken, 
-        refreshToken: rawRefreshToken, 
         user: userPayload, 
-        tenantId: userRecord.tenant_id 
+        tenantId: userRecord.tenant_id,
+        ip: RequestUtil.getIp(req),
+        userAgent: RequestUtil.getAgent(req)
       });
       
       await redisClient.setEx(`auth_code:${authCode}`, 60, codePayload);
