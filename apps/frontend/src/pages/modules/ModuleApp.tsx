@@ -6,7 +6,6 @@ import { LogOut, User, ShieldCheck, RefreshCw, ArrowRightLeft, Building2, X, Ban
 import { Link, useNavigate } from 'react-router-dom';
 import { InputField } from '../../components/ui/InputField';
 import { OtpActionInput } from '../../components/ui/OtpActionInput';
-import { MfaSecurityModal } from '../../components/security/MfaSecurityModal';
 import { usePushNotifications } from '../../hooks/usePushNotifications';
 
 export default function ModuleApp() {
@@ -254,6 +253,19 @@ export default function ModuleApp() {
     }
   };
 
+  useEffect(() => {
+    // Listens for the browser restoring the page from the Back/Forward Cache
+    const handlePageShow = (event: PageTransitionEvent) => {
+      // If the browser loaded the page from BFCache (e.g. hitting the Back button)
+      if (event.persisted) {
+        setLaunchingApp(null); // Instantly un-freezes the "Launch App" button
+      }
+    };
+
+    window.addEventListener('pageshow', handlePageShow);
+    return () => window.removeEventListener('pageshow', handlePageShow);
+  }, []);
+
   // --- SELF-HEALING SESSION SYNC ---
   const handleSyncAccess = async () => {
     setIsSyncing(true);
@@ -454,7 +466,6 @@ export default function ModuleApp() {
           </div>
         )}
 
-        <MfaSecurityModal />
 
         {user?.status === 'SUSPENDED' ? (
           <div className="embossed-card p-10 text-center max-w-2xl mx-auto mt-16 bg-white/80 backdrop-blur-sm border border-red-100 animate-in zoom-in-95 duration-300">

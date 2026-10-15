@@ -30,10 +30,12 @@ import SecurityControl from './pages/admin/SecurityControl';
 import WorkspaceSettings from './pages/admin/WorkspaceSettings';
 import BillingSettings from './pages/admin/BillingSettings';
 import CustomFormManager from './pages/admin/CustomFormManager';
+import { MfaSecurityModal } from './components/security/MfaSecurityModal';
 
 export default function App() {
   return (
     <Router>
+      <MfaSecurityModal />
       <Routes>
         {/* --- PUBLIC MARKETING ECOSYSTEM --- */}
         <Route path="/" element={<Home />} />
